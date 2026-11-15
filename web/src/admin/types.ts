@@ -36,6 +36,8 @@ export interface Booking {
   cancelReason: string | null
   note: string
   createdVia: 'web' | 'mcp' | 'admin' | 'api'
+  /** false: still eingetragen, der Gast bekommt keine Mails */
+  notifyGuest?: boolean
 }
 
 export interface Schedule {

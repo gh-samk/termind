@@ -7,6 +7,8 @@ export type ErrorCode =
   | 'slot_taken'
   | 'rate_limited'
   | 'setup_required'
+  | 'handled'
+  | 'expired'
 
 const status: Record<ErrorCode, number> = {
   not_found: 404,
@@ -17,6 +19,8 @@ const status: Record<ErrorCode, number> = {
   slot_taken: 409,
   rate_limited: 429,
   setup_required: 409,
+  handled: 409,
+  expired: 410,
 }
 
 /** Fachlicher Fehler mit verständlicher Meldung. Wird von REST und MCP gleich behandelt. */

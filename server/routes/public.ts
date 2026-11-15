@@ -1,11 +1,12 @@
 import { v } from '../lib/validate'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { cancelSchema, rescheduleSchema } from '../../shared/schemas'
+import { actionExecuteSchema, cancelSchema, rescheduleSchema } from '../../shared/schemas'
 import { db } from '../db/client'
 import { AppError, notFound } from '../lib/errors'
 import { hit } from '../lib/rateLimit'
 import { renderMail } from '../mail/templates'
+import { describeActionToken, executeActionToken } from '../services/actionTokens'
 import { createBooking, getBookingByToken, getSlots, guestCancel, guestReschedule, publicBooking } from '../services/bookings'
 import { findPublicEventType, listPublicEventTypes, toPublicEventType } from '../services/eventTypes'
 import { getSetting } from '../services/settings'
@@ -77,4 +78,12 @@ export const publicRoutes = new Hono<Env>()
       'content-disposition': `attachment; filename="termin.ics"`,
     })
   })
-
+  /* Direkt-Knöpfe aus der Anfrage-Mail: GET zeigt nur an, erst POST führt aus. Antworten nie zwischenspeichern. */
+  .get('/aktion/:token', async (c) => {
+    c.header('cache-control', 'no-store')
+    return c.json(await describeActionToken(c.req.param('token'), clientIp(c), c.req.header('accept-language')))
+  })
+  .post('/aktion/:token', v('json', actionExecuteSchema), async (c) => {
+    c.header('cache-control', 'no-store')
+    return c.json({ ok: true, ...(await executeActionToken(c.req.param('token'), clientIp(c), c.req.valid('json').message)) })
+  })

@@ -7,10 +7,11 @@ import { useAuth, useRefreshAuth } from '../auth/useAuth'
 import { api, errorMessage } from '../lib/api'
 import { isoDateIn } from '../lib/format'
 import { cn } from '../lib/cn'
-import { Badge, Button, Card, Dialog, Field, Input, SectionHeader, Segmented, Select, Switch, toast } from '../ui'
+import { Badge, Button, Card, Dialog, Field, Input, SaveBar, SectionHeader, Segmented, Select, Switch, toast } from '../ui'
 import { ErrorBox, PageHeader } from './AdminShell'
 import { CalendarStatusCard } from './Kalender'
 import type { Schedule } from './types'
+import { useUnsavedGuard } from './unsaved'
 
 const dayNames: Record<DayKey, string> = { mo: 'Montag', di: 'Dienstag', mi: 'Mittwoch', do: 'Donnerstag', fr: 'Freitag', sa: 'Samstag', so: 'Sonntag' }
 const times = [...Array.from({ length: 4 * 24 }, (_, i) => `${String(Math.floor(i / 4)).padStart(2, '0')}:${String((i % 4) * 15).padStart(2, '0')}`), '24:00']
@@ -33,6 +34,7 @@ export function Verfuegbarkeit() {
   }, [q.data])
 
   const dirty = q.data && week && (JSON.stringify(week) !== JSON.stringify(q.data.weekly) || tz !== q.data.timezone)
+  const guard = useUnsavedGuard(!!dirty)
   const save = useMutation({
     mutationFn: () => api<Schedule>('/api/schedule', { method: 'PATCH', body: { weekly: week, timezone: tz } }),
     onSuccess: (s) => {
@@ -68,7 +70,7 @@ export function Verfuegbarkeit() {
       <PageHeader
         title="Verfügbarkeit"
         description="Wann du grundsätzlich buchbar bist. Bestehende Termine werden automatisch ausgespart."
-        actions={<Button variant="primary" disabled={(!dirty && !needsConfirm) || save.isPending || badDays.length > 0} onClick={() => save.mutate()}>{dirty ? 'Speichern' : needsConfirm ? 'Zeiten übernehmen' : 'Gespeichert'}</Button>}
+        actions={<Button variant="primary" className="max-lg:hidden" disabled={(!dirty && !needsConfirm) || save.isPending || badDays.length > 0} onClick={() => save.mutate()}>{dirty ? 'Speichern' : needsConfirm ? 'Zeiten übernehmen' : 'Gespeichert'}</Button>}
       />
       <div className="mb-6 flex flex-col gap-3">
         <ErrorBox error={save.error} />
@@ -79,7 +81,7 @@ export function Verfuegbarkeit() {
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-4 sm:px-6">
             <SectionHeader title="Wochenzeiten" />
-            <TimezonePicker value={tz} onChange={setTz} aria-label="Zeitzone" className="h-8 w-[260px] max-w-full text-[13px]" />
+            <TimezonePicker value={tz} onChange={setTz} aria-label="Zeitzone" className="h-8 w-[260px] max-w-full text-[13px] pointer-coarse:h-11" />
           </div>
           <p className="border-b border-line px-4 py-2.5 text-[13px] text-muted sm:px-6">Diese Zeiten gelten in der gewählten Zeitzone. Sie ist zugleich deine Zeitzone im Profil und für die Terminliste.</p>
           <ul className="divide-y divide-line">
@@ -88,9 +90,9 @@ export function Verfuegbarkeit() {
               const on = ranges.length > 0
               return (
                 <li key={d} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:px-6">
-                  <div className="flex h-10 w-40 shrink-0 items-center gap-3">
-                    <Switch label={dayNames[d]} checked={on} onCheckedChange={(v) => update(d, v ? [['09:00', '17:00']] : [])} />
-                    <span className={cn('text-sm font-medium', !on && 'text-muted')}>{dayNames[d]}</span>
+                  <div className="flex h-10 w-40 shrink-0 items-center gap-3 pointer-coarse:h-11">
+                    <Switch id={`day-${d}`} label={dayNames[d]} checked={on} onCheckedChange={(v) => update(d, v ? [['09:00', '17:00']] : [])} />
+                    <label htmlFor={`day-${d}`} className={cn('flex-1 cursor-pointer py-2 text-sm font-medium', !on && 'text-muted')}>{dayNames[d]}</label>
                   </div>
                   {on ? (
                     <div className="flex flex-1 flex-col gap-2">
@@ -152,13 +154,15 @@ export function Verfuegbarkeit() {
         </div>
       </div>
       <AddException open={add} onOpenChange={setAdd} />
+      <SaveBar show={!!dirty || needsConfirm} pending={save.isPending} disabled={badDays.length > 0} onSave={() => save.mutate()} label={dirty ? 'Speichern' : 'Zeiten übernehmen'} text={dirty ? 'Ungespeicherte Änderungen' : 'Zeiten noch nicht bestätigt'} />
+      {guard.dialog}
     </>
   )
 }
 
 function TimeSelect({ value, onChange, label, invalid }: { value: string; onChange: (v: string) => void; label: string; invalid?: boolean }) {
   return (
-    <Select aria-label={label} aria-invalid={invalid || undefined} value={value} onChange={(e) => onChange(e.target.value)} className={cn('h-10 w-[92px] pr-7 pl-2.5 tabular sm:w-[104px] sm:pr-8 sm:pl-3', invalid && 'border-danger ring-2 ring-danger/20')}>
+    <Select aria-label={label} aria-invalid={invalid || undefined} value={value} onChange={(e) => onChange(e.target.value)} className={cn('h-10 pointer-coarse:h-11 w-[92px] pr-7 pl-2.5 tabular sm:w-[104px] sm:pr-8 sm:pl-3', invalid && 'border-danger ring-2 ring-danger/20')}>
       {times.map((t) => <option key={t}>{t}</option>)}
     </Select>
   )

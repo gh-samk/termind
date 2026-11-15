@@ -49,6 +49,7 @@ function Editor({ t, placeholders, onClose }: { t: TemplateInfo; placeholders: s
   const qc = useQueryClient()
   const [locale, setLocale] = useState<Locale>('de')
   const [v, setV] = useState<Texts>({ subject: '', intro: '' })
+  const [width, setWidth] = useState<'desktop' | 'phone'>('desktop')
   const focused = useRef<'subject' | 'intro'>('intro')
   useEffect(() => {
     const d = t[locale]
@@ -99,7 +100,7 @@ function Editor({ t, placeholders, onClose }: { t: TemplateInfo; placeholders: s
     >
       <div className="flex flex-col gap-5">
         <Segmented label="Sprache" size="sm" value={locale} onChange={setLocale} options={[{ value: 'de', label: 'Deutsch' }, { value: 'en', label: 'English' }]} />
-        <div className="grid gap-5 md:grid-cols-2">
+        <div className="grid gap-5">
           <div className="flex flex-col gap-4">
             <Field label="Betreff" htmlFor="ms"><Input id="ms" value={v.subject} onFocus={() => (focused.current = 'subject')} onChange={(e) => setV({ ...v, subject: e.target.value })} /></Field>
             <Field label="Einleitung" htmlFor="mi" hint="Steht nach „Hallo {vorname},“. Leerzeile = neuer Absatz.">
@@ -116,10 +117,15 @@ function Editor({ t, placeholders, onClose }: { t: TemplateInfo; placeholders: s
             <ErrorBox error={save.error} />
           </div>
           <div className="min-w-0">
-            <p className="mb-1.5 text-[13px] font-medium">Vorschau</p>
-            <div className="overflow-hidden rounded-xl border border-line bg-[#f5f3ee]">
-              <p className="truncate border-b border-black/5 bg-white px-3 py-2 text-xs text-[#5f5a52]">{preview.data?.subject ?? ' '}</p>
-              <iframe title="Vorschau der Mail" sandbox="allow-same-origin" srcDoc={preview.data?.html ?? ''} className="h-[380px] w-full bg-[#f5f3ee]" />
+            <div className="mb-1.5 flex items-center justify-between gap-3">
+              <p className="text-[13px] font-medium">Vorschau</p>
+              <div className="hidden sm:block"><Segmented label="Breite der Vorschau" size="sm" value={width} onChange={setWidth} options={[{ value: 'desktop', label: 'Computer' }, { value: 'phone', label: 'Handy' }]} /></div>
+            </div>
+            <div className="overflow-x-auto rounded-xl border border-line bg-[#f5f3ee]">
+              <div className={width === 'phone' ? 'mx-auto w-full max-w-[375px]' : 'mx-auto w-full sm:min-w-[560px]'}>
+                <p className="truncate border-b border-black/5 bg-white px-3 py-2 text-xs text-[#5f5a52]">{preview.data?.subject ?? ' '}</p>
+                <iframe title="Vorschau der Mail" sandbox="allow-same-origin" srcDoc={preview.data?.html ?? ''} className="h-[520px] w-full bg-[#f5f3ee]" />
+              </div>
             </div>
           </div>
         </div>

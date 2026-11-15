@@ -3,5 +3,5 @@ import { fileURLToPath } from 'node:url'
 
 export default defineConfig({
   resolve: { alias: { '@shared': fileURLToPath(new URL('./shared', import.meta.url)) } },
-  test: { include: ['server/**/*.test.ts', 'shared/**/*.test.ts'], environment: 'node', setupFiles: ['server/test/setup.ts'] },
+  test: { include: ['server/**/*.test.ts', 'shared/**/*.test.ts', 'web/src/**/*.test.ts'], environment: 'node', setupFiles: ['server/test/setup.ts'] },
 })

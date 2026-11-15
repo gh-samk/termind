@@ -213,10 +213,10 @@ export function useRovingRadio<T>(values: T[], value: T, onChange: (v: T) => voi
   return { ref: root, onKeyDown, tabIndex: (v: T) => (v === current ? 0 : -1) }
 }
 
-export function Segmented<T extends string>({ value, onChange, options, className, size = 'md', label }: { value: T; onChange: (v: T) => void; options: { value: T; label: ReactNode }[]; className?: string; size?: 'sm' | 'md'; label?: string }) {
+export function Segmented<T extends string>({ value, onChange, options, className, size = 'md', label, wrap }: { value: T; onChange: (v: T) => void; options: { value: T; label: ReactNode }[]; className?: string; size?: 'sm' | 'md'; label?: string; /** Schmale Bildschirme: 2×2-Raster statt einer Zeile */ wrap?: boolean }) {
   const roving = useRovingRadio(options.map((o) => o.value), value, onChange)
   return (
-    <div ref={roving.ref} role="radiogroup" aria-label={label} onKeyDown={roving.onKeyDown} className={cn('inline-flex rounded-[10px] bg-sunken p-0.5 ring-1 ring-line ring-inset', className)}>
+    <div ref={roving.ref} role="radiogroup" aria-label={label} onKeyDown={roving.onKeyDown} className={cn('rounded-[10px] bg-sunken p-0.5 ring-1 ring-line ring-inset', wrap ? 'grid w-full grid-cols-2 gap-0.5 sm:inline-flex sm:w-auto' : 'inline-flex', className)}>
       {options.map((o) => (
         <button
           key={o.value}
@@ -227,6 +227,7 @@ export function Segmented<T extends string>({ value, onChange, options, classNam
           onClick={() => onChange(o.value)}
           className={cn(
             'press inline-flex items-center gap-1.5 rounded-lg font-medium text-muted hover:text-fg pointer-coarse:h-11',
+            wrap && 'justify-center',
             size === 'sm' ? 'h-7 px-2.5 text-[13px]' : 'h-8 px-3 text-sm',
             value === o.value && 'bg-surface text-fg shadow-xs ring-1 ring-line',
           )}
@@ -468,5 +469,23 @@ export function Toaster() {
         ),
       )}
     </div>
+  )
+}
+
+/* ---------------- Feste Speichern-Leiste (nur Mobil) ---------------- */
+/**
+ * Erscheint nur bei ungespeicherten Änderungen, über der unteren Navigation (Safe-Area beachtet).
+ * Entweder onSave (Knopf) oder formId (Absenden eines Formulars mit Browser-Prüfung).
+ */
+export function SaveBar({ show, pending, disabled, onSave, formId, label = 'Speichern', text = 'Ungespeicherte Änderungen' }: { show: boolean; pending?: boolean; disabled?: boolean; onSave?: () => void; formId?: string; label?: string; text?: string }) {
+  if (!show) return null
+  return (
+    <>
+      <div aria-hidden className="h-16 lg:hidden" />
+      <div role="region" aria-label="Änderungen speichern" className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 flex items-center justify-between gap-3 border-t border-line bg-surface/95 px-4 py-2.5 shadow-pop backdrop-blur-md lg:hidden">
+        <p className="min-w-0 text-sm text-muted">{text}</p>
+        <Button variant="primary" type={formId ? 'submit' : 'button'} form={formId} disabled={pending || disabled} onClick={onSave}>{pending ? 'Speichert …' : label}</Button>
+      </div>
+    </>
   )
 }

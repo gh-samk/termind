@@ -24,6 +24,7 @@ export const COMMON_ZONES: { id: string; name: string }[] = [
   { id: 'America/New_York', name: 'USA Ostküste (New York)' },
   { id: 'America/Chicago', name: 'USA Mitte (Chicago)' },
   { id: 'America/Los_Angeles', name: 'USA Westküste (Los Angeles)' },
+  { id: 'Asia/Kolkata', name: 'Indien (Kalkutta)' },
   { id: 'UTC', name: 'Koordinierte Weltzeit (UTC)' },
 ]
 
@@ -65,9 +66,74 @@ export function cityName(tz: string): string {
   return last.replace(/_/g, ' ')
 }
 
+/** Deutsche Schreibweise für häufige Städte, deren Name sich vom englischen unterscheidet. */
+const CITY_DE: Record<string, string> = {
+  Vienna: 'Wien', Zurich: 'Zürich', Rome: 'Rom', Warsaw: 'Warschau', Athens: 'Athen', Prague: 'Prag', Moscow: 'Moskau',
+  Copenhagen: 'Kopenhagen', Brussels: 'Brüssel', Lisbon: 'Lissabon', Belgrade: 'Belgrad', Bucharest: 'Bukarest', Kyiv: 'Kiew', Kiev: 'Kiew', Calcutta: 'Kalkutta', Saigon: 'Ho-Chi-Minh-Stadt', Katmandu: 'Kathmandu', Rangoon: 'Rangun', Yangon: 'Rangun',
+  Cairo: 'Kairo', Tokyo: 'Tokio', Singapore: 'Singapur', 'Hong Kong': 'Hongkong', Tehran: 'Teheran', Baghdad: 'Bagdad',
+  Mexico_City: 'Mexiko-Stadt', 'Mexico City': 'Mexiko-Stadt', Sao_Paulo: 'São Paulo', 'Sao Paulo': 'São Paulo', Havana: 'Havanna',
+  Kathmandu: 'Kathmandu', Kolkata: 'Kalkutta', Ho_Chi_Minh: 'Ho-Chi-Minh-Stadt', 'Ho Chi Minh': 'Ho-Chi-Minh-Stadt',
+  Cape_Verde: 'Kap Verde', Edmonton: 'Edmonton', Luxembourg: 'Luxemburg', Cologne: 'Köln', Munich: 'München', Geneva: 'Genf',
+  Seville: 'Sevilla', Venice: 'Venedig', Naples: 'Neapel', Florence: 'Florenz', Gothenburg: 'Göteborg', Krakow: 'Krakau',
+  Chisinau: 'Chișinău', Kaliningrad: 'Kaliningrad', Bahrain: 'Bahrain', Muscat: 'Maskat', Kuwait: 'Kuwait', Riyadh: 'Riad',
+  Damascus: 'Damaskus', Beirut: 'Beirut', Nicosia: 'Nikosia', Algiers: 'Algier', Tunis: 'Tunis', Casablanca: 'Casablanca',
+}
+/** Ort auf Deutsch, sonst der englische Name. */
+export function cityNameDe(tz: string): string {
+  const c = cityName(tz)
+  return CITY_DE[c] ?? c
+}
+
 /** Lesbarer Name ohne Zeitabstand: „Deutschland (Berlin)“ oder „New York“. */
 export function timezoneName(tz: string): string {
-  return COMMON_NAME.get(tz) ?? cityName(tz)
+  return COMMON_NAME.get(tz) ?? cityNameDe(tz)
+}
+
+/** Veraltete Schreibweisen und Zonen ohne Nutzen für Terminbuchung, die Geräte teils noch melden. */
+const OBSOLETE = new Set([
+  'Europe/Kiev', 'Europe/Busingen', 'Europe/Belfast', 'Europe/Tiraspol', 'Asia/Calcutta', 'Asia/Katmandu', 'Asia/Rangoon', 'Asia/Saigon',
+  'Asia/Ulan_Bator', 'Asia/Thimbu', 'Asia/Macao', 'Asia/Dacca', 'Asia/Ujung_Pandang', 'Asia/Istanbul', 'Asia/Chongqing', 'Asia/Harbin',
+  'Asia/Kashgar', 'America/Buenos_Aires', 'America/Indianapolis', 'America/Louisville', 'America/Godthab', 'America/Montreal',
+  'America/Catamarca', 'America/Cordoba', 'America/Jujuy', 'America/Mendoza', 'America/Fort_Wayne', 'America/Knox_IN', 'America/Virgin',
+  'America/Shiprock', 'America/Rosario', 'America/Atka', 'Atlantic/Faeroe', 'Atlantic/Jan_Mayen', 'Pacific/Samoa', 'Pacific/Truk',
+  'Pacific/Ponape', 'Pacific/Yap', 'Africa/Asmera', 'Africa/Timbuktu', 'Australia/ACT', 'Australia/NSW', 'Australia/Canberra',
+  'Australia/LHI', 'Australia/North', 'Australia/Queensland', 'Australia/South', 'Australia/Tasmania', 'Australia/Victoria',
+  'Australia/West', 'Australia/Yancowinna', 'Australia/Currie',
+])
+/** Alte Schreibweise → kanonischer Name. */
+const CANONICAL: Record<string, string> = {
+  'Europe/Kiev': 'Europe/Kyiv', 'Asia/Calcutta': 'Asia/Kolkata', 'Asia/Katmandu': 'Asia/Kathmandu', 'Asia/Rangoon': 'Asia/Yangon',
+  'Asia/Saigon': 'Asia/Ho_Chi_Minh', 'Asia/Ulan_Bator': 'Asia/Ulaanbaatar', 'Asia/Thimbu': 'Asia/Thimphu', 'Asia/Macao': 'Asia/Macau',
+  'Asia/Dacca': 'Asia/Dhaka', 'Asia/Ujung_Pandang': 'Asia/Makassar', 'America/Buenos_Aires': 'America/Argentina/Buenos_Aires',
+  'America/Indianapolis': 'America/Indiana/Indianapolis', 'America/Louisville': 'America/Kentucky/Louisville', 'America/Godthab': 'America/Nuuk',
+  'Atlantic/Faeroe': 'Atlantic/Faroe', 'Africa/Asmera': 'Africa/Asmara', 'Pacific/Truk': 'Pacific/Chuuk', 'Pacific/Ponape': 'Pacific/Pohnpei',
+  'Europe/Busingen': 'Europe/Zurich', 'Europe/Belfast': 'Europe/London', 'Australia/ACT': 'Australia/Sydney', 'Australia/NSW': 'Australia/Sydney',
+  'Australia/Canberra': 'Australia/Sydney', 'Australia/Victoria': 'Australia/Melbourne',
+}
+
+function zoneKnown(id: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: id })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Alias auf den kanonischen Namen abbilden, sofern die Laufzeit ihn kennt; sonst den Alias behalten (die Zone fehlt nie). */
+export function canonicalZone(id: string): string {
+  const c = CANONICAL[id]
+  return c && zoneKnown(c) ? c : id
+}
+
+/** Für Auswahllisten geeignet: kein Etc/*, keine Antarktis-Stationen, keine veralteten Aliasse ohne Ersatz. */
+export function isSelectableZone(id: string): boolean {
+  return (id === 'UTC' || id.includes('/')) && !id.startsWith('Etc/') && !id.startsWith('Antarctica/') && !id.startsWith('SystemV/') && !id.startsWith('US/') && !id.startsWith('Brazil/') && !id.startsWith('Canada/') && !id.startsWith('Chile/') && !id.startsWith('Mexico/') && (!OBSOLETE.has(id) || id in CANONICAL)
+}
+
+/** Liste bereinigen: Aliasse auf kanonische Namen, ohne Doppelte, ohne ungeeignete Zonen. */
+export function normalizeZones(all: string[]): string[] {
+  return [...new Set(all.filter(isSelectableZone).map(canonicalZone))]
 }
 
 /** Name mit Zeitabstand: „Deutschland (Berlin), UTC+1“. */
@@ -88,6 +154,7 @@ export interface TimezoneGroup {
  */
 export function timezoneGroups(all: string[], opts: { recommended?: string; current?: string; at?: Date } = {}): TimezoneGroup[] {
   const at = opts.at ?? new Date()
+  all = normalizeZones(all)
   const known = new Set(all)
   const used = new Set<string>()
   const take = (id: string) => (used.has(id) ? false : (used.add(id), true))
@@ -105,7 +172,7 @@ export function timezoneGroups(all: string[], opts: { recommended?: string; curr
   if (common.length) groups.push({ label: 'Häufig', zones: common })
 
   const byContinent = new Map<string, { id: string; label: string }[]>()
-  for (const id of [...all].sort((a, b) => cityName(a).localeCompare(cityName(b), 'de'))) {
+  for (const id of normalizeZones(all).sort((a, b) => cityNameDe(a).localeCompare(cityNameDe(b), 'de'))) {
     if (!take(id)) continue
     const prefix = id.split('/')[0]
     const g = CONTINENT[prefix] ?? 'Sonstige'
@@ -119,7 +186,7 @@ export function timezoneGroups(all: string[], opts: { recommended?: string; curr
 export function supportedTimezones(): string[] {
   try {
     const list = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.('timeZone')
-    if (list?.length) return list
+    if (list?.length) return normalizeZones(list)
   } catch {
     /* ältere Umgebung */
   }

@@ -1,6 +1,7 @@
 import { asc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import type { Locale } from '../../shared/types'
+import { config } from '../config'
 import { db } from '../db/client'
 import { eventTypes, users } from '../db/schema'
 import { type Actor, requireOwner } from '../lib/actor'
@@ -62,10 +63,11 @@ export async function previewMail(actor: Actor, template: string, locale: string
     answers: [{ fieldId: 'x', label: locale === 'de' ? 'Worum geht es?' : 'Topic', value: locale === 'de' ? 'Neue Website' : 'New website' }],
     location: ev.location.kind === 'video-template' ? { ...ev.location, kind: 'video' as const, value: ev.location.value.replace('{id}', 'beispiel') } : ev.location,
     status: template.includes('requested') ? ('pending' as const) : template.includes('cancelled') ? ('cancelled' as const) : template.includes('declined') ? ('declined' as const) : ('confirmed' as const),
-    cancelReason: null, cancelledBy: null, sequence: 0, note: '', calendarRef: null, createdVia: 'web' as const, anonymizedAt: null, createdAt: '', updatedAt: null,
+    cancelReason: null, cancelledBy: null, sequence: 0, note: '', calendarRef: null, createdVia: 'web' as const, anonymizedAt: null, notifyGuest: true, guestMoves: 0, createdAt: '', updatedAt: null,
   }
   const m = renderMail(template, {
     booking, event: ev, host, branding: await getSetting('branding'),
+    actionLinks: template === 'host.requested' ? { confirm: `${config.publicUrl}/aktion/vorschau`, decline: `${config.publicUrl}/aktion/vorschau` } : undefined,
     texts: { [template]: { [locale]: { subject: v.subject || undefined, intro: v.intro || undefined } } },
   })
   return { subject: m.subject, html: m.html }

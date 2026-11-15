@@ -48,7 +48,7 @@ export function toPublicEventType(e: EventTypeRow, locale: 'de' | 'en' = 'de'): 
 }
 
 function validateLocation(l: Location) {
-  if ((l.kind === 'video' || l.kind === 'video-template') && !/^https:\/\//.test(l.value)) throw invalid('Der Video-Link muss mit https:// beginnen.')
+  if ((l.kind === 'video' || l.kind === 'video-template') && !/^https:\/\//.test(l.value)) throw invalid('Bitte gib einen Link beginnend mit https:// an.')
   if (l.kind === 'video-template' && !l.value.includes('{id}')) throw invalid('Die Link-Vorlage braucht den Platzhalter {id}.')
   if (l.kind === 'onsite' && !l.value.trim()) throw invalid('Bitte eine Adresse angeben.')
   if (l.kind === 'phone-guest-calls' && !l.value.trim()) throw invalid('Bitte die Telefonnummer angeben, unter der Gäste anrufen.')

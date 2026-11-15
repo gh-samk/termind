@@ -219,7 +219,7 @@ export function CalendarStatusCard() {
       ) : (
         <p className="mt-2 text-sm text-muted">Noch kein Kalender verbunden. Termine aus deinem Kalender werden dann automatisch ausgespart.</p>
       )}
-      <Link to="/admin/einstellungen/kalender" className="mt-4 inline-block text-sm font-medium text-accent hover:underline">Kalender verwalten</Link>
+      <Link to="/admin/einstellungen/kalender" className="mt-4 inline-flex items-center text-sm font-medium text-accent hover:underline pointer-coarse:min-h-11">Kalender verwalten</Link>
     </Card>
   )
 }

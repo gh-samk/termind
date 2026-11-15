@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { portAfterSecurityChange, providerForHost, SMTP_PROVIDERS } from './smtpProviders'
-import { cityName, timezoneGroups, timezoneLabel, timezoneName, utcOffset } from './timezones'
+import { cityName, isSelectableZone, normalizeZones, timezoneGroups, timezoneLabel, timezoneName, utcOffset } from './timezones'
 
 const winter = new Date('2026-01-15T12:00:00Z')
 const summer = new Date('2026-07-15T12:00:00Z')
@@ -19,17 +19,17 @@ describe('Zeitzonen-Anzeige', () => {
     expect(timezoneName('Europe/Berlin')).toBe('Deutschland (Berlin)')
     expect(timezoneName('Europe/Vienna')).toBe('Österreich (Wien)')
     expect(timezoneName('Europe/Zurich')).toBe('Schweiz (Zürich)')
-    expect(timezoneName('Asia/Tokyo')).toBe('Tokyo')
+    expect(timezoneName('Asia/Tokyo')).toBe('Tokio')
     expect(cityName('America/Argentina/Buenos_Aires')).toBe('Buenos Aires')
     expect(timezoneLabel('Europe/Berlin', winter)).toBe('Deutschland (Berlin), UTC+1')
-    expect(timezoneLabel('America/Sao_Paulo', winter)).toBe('Sao Paulo, UTC−3')
+    expect(timezoneLabel('America/Sao_Paulo', winter)).toBe('São Paulo, UTC−3')
   })
 
   it('Gruppen: Empfohlen zuerst, dann Häufig, dann Erdteile; jede Zone nur einmal', () => {
     const all = ['Europe/Berlin', 'Europe/Vienna', 'Europe/Zurich', 'Asia/Tokyo', 'America/Denver', 'Africa/Cairo', 'Pacific/Auckland']
     const g = timezoneGroups(all, { recommended: 'Asia/Tokyo', at: winter })
     expect(g.map((x) => x.label)).toEqual(['Empfohlen', 'Häufig', 'Amerika', 'Afrika', 'Pazifik'])
-    expect(g[0].zones).toEqual([{ id: 'Asia/Tokyo', label: 'Empfohlen: Tokyo, UTC+9' }])
+    expect(g[0].zones).toEqual([{ id: 'Asia/Tokyo', label: 'Empfohlen: Tokio, UTC+9' }])
     const ids = g.flatMap((x) => x.zones.map((z) => z.id))
     expect(new Set(ids).size).toBe(ids.length)
     expect(ids).toContain('Europe/Berlin')
@@ -65,5 +65,19 @@ describe('Mail-Anbieter', () => {
     expect(by.other.host).toBe('')
     expect(providerForHost(' SMTP.GMAIL.COM ')?.id).toBe('google')
     expect(providerForHost('')).toBeUndefined()
+  })
+
+  it('filtert Etc, Antarktis und veraltete Aliasse aus der Auswahl', () => {
+    for (const z of ['Etc/GMT+5', 'Antarctica/Troll', 'US/Pacific']) expect(isSelectableZone(z)).toBe(false)
+    for (const z of ['Europe/Kyiv', 'Asia/Kolkata', 'UTC', 'America/New_York']) expect(isSelectableZone(z)).toBe(true)
+  })
+
+  it('Aliasse werden auf kanonische Namen abgebildet, Indien bleibt auswählbar', () => {
+    const list = normalizeZones(['Asia/Calcutta', 'Europe/Kiev', 'Asia/Saigon', 'Asia/Katmandu', 'Asia/Rangoon', 'Europe/Berlin'])
+    expect(list).toEqual(['Asia/Kolkata', 'Europe/Kyiv', 'Asia/Ho_Chi_Minh', 'Asia/Kathmandu', 'Asia/Yangon', 'Europe/Berlin'])
+    const ids = timezoneGroups(['Asia/Calcutta', 'Europe/Berlin']).flatMap((g) => g.zones.map((z) => z.id))
+    expect(ids).toContain('Asia/Kolkata')
+    expect(ids).not.toContain('Asia/Calcutta')
+    expect(timezoneName('Asia/Kolkata')).toBe('Indien (Kalkutta)')
   })
 })

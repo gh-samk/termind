@@ -246,6 +246,8 @@
   .enter, .enter-stagger > * { animation: fade-in 150ms ease-out both; }
   .pop[data-state='open'], .modal[data-state='open'] { animation: fade-in 150ms ease-out; }
   .sheet[data-state='open'] { animation: fade-in 150ms ease-out; }
+  /* Platzhalter und Ladekreise stehen still */
+  .animate-pulse, .animate-spin { animation: none; }
 }
 
 /* Hover nur auf Geräten mit echtem Zeiger */

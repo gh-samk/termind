@@ -13,7 +13,7 @@ export async function audit(actor: Actor, action: string, detail: string, kind: 
     actorType: actor.type,
     actorId: actor.type === 'token' ? actor.tokenId : actor.type === 'user' ? actor.userId : null,
     client: actor.type === 'token' ? actor.client : null,
-    action,
+    action: actor.type === 'user' && actor.via === 'mail-link' ? `${action} (per Mail-Knopf)` : action,
     detail,
     kind,
   })

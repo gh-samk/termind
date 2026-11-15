@@ -1,6 +1,6 @@
 import { and, inArray, isNotNull, lt, or } from 'drizzle-orm'
 import { db } from './db/client'
-import { jobs, oauthClients, oauthCodes, oauthGrants, passwordResets, pendingActions } from './db/schema'
+import { actionTokens, jobs, oauthClients, oauthCodes, oauthGrants, passwordResets, pendingActions } from './db/schema'
 import { notInArray } from 'drizzle-orm'
 
 /** Täglich aufräumen, damit die Datenbank auf kleinen Servern klein bleibt. */
@@ -9,6 +9,7 @@ export async function housekeeping() {
   const monthAgo = new Date(Date.now() - 30 * 86_400_000).toISOString()
   await db.delete(jobs).where(and(inArray(jobs.status, ['done', 'failed']), lt(jobs.runAt, monthAgo)))
   await db.delete(passwordResets).where(lt(passwordResets.expiresAt, now))
+  await db.delete(actionTokens).where(lt(actionTokens.expiresAt, now))
   await db.delete(oauthCodes).where(lt(oauthCodes.expiresAt, now))
   await db.delete(pendingActions).where(lt(pendingActions.expiresAt, now))
   // Registrierte Clients, die nie benutzt wurden, nach 7 Tagen entfernen

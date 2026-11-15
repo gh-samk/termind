@@ -59,10 +59,29 @@ export const apiRoutes = new Hono<Env>()
   })
 
   /* Termine */
-  .get('/bookings', v('query', z.object({ view: z.enum(['upcoming', 'pending', 'past', 'all']).optional(), q: z.string().max(100).optional() })), async (c) =>
-    c.json((await bookings.listBookings(c.get('actor'), c.req.valid('query'))).map(hideSecrets)),
+  .get(
+    '/bookings',
+    v(
+      'query',
+      z.object({
+        view: z.enum(['upcoming', 'pending', 'past', 'cancelled', 'all']).optional(),
+        q: z.string().max(100).optional(),
+        eventTypeId: z.string().max(64).optional(),
+        from: z.iso.datetime({ offset: true }).optional(),
+        to: z.iso.datetime({ offset: true }).optional(),
+      }),
+    ),
+    async (c) => c.json((await bookings.listBookings(c.get('actor'), c.req.valid('query'))).map(hideSecrets)),
   )
   .post('/bookings', async (c) => c.json(hideSecrets(await bookings.createBooking(c.get('actor'), await c.req.json())), 201))
+  /* Freie Zeiten zum Verschieben: die bisherige Zeit des Termins zählt nicht als belegt */
+  .get('/bookings/:id/slots', v('query', z.object({ from: date, to: date, tz: z.string() })), async (c) => {
+    const b = await bookings.getBooking(c.get('actor'), c.req.param('id'))
+    const e = await eventTypes.getEventType(c.get('actor'), b.eventTypeId)
+    const { from, to, tz } = c.req.valid('query')
+    return c.json({ slots: await bookings.getSlots(e, from, to, tz, b.id) })
+  })
+  .get('/bookings/:id/history', async (c) => c.json(await bookings.guestHistory(c.get('actor'), c.req.param('id'))))
   .get('/bookings/:id', async (c) => c.json(hideSecrets(await bookings.getBooking(c.get('actor'), c.req.param('id')))))
   .patch('/bookings/:id', v('json', z.object({ note: z.string().max(4000) })), async (c) =>
     c.json(hideSecrets(await bookings.updateBookingNote(c.get('actor'), c.req.param('id'), c.req.valid('json').note))),
@@ -70,8 +89,8 @@ export const apiRoutes = new Hono<Env>()
   .post('/bookings/:id/cancel', v('json', cancelSchema), async (c) => c.json(hideSecrets(await bookings.cancelBooking(c.get('actor'), c.req.param('id'), c.req.valid('json').reason))))
   .post('/bookings/:id/accept', async (c) => c.json(hideSecrets(await bookings.acceptBooking(c.get('actor'), c.req.param('id')))))
   .post('/bookings/:id/reschedule', v('json', rescheduleSchema), async (c) => {
-    const { start, reason } = c.req.valid('json')
-    return c.json(hideSecrets(await bookings.rescheduleBooking(c.get('actor'), c.req.param('id'), start, reason)))
+    const { start, reason, anyTime } = c.req.valid('json')
+    return c.json(hideSecrets(await bookings.rescheduleBooking(c.get('actor'), c.req.param('id'), start, reason, { anyTime })))
   })
 
   /* Einstellungen */

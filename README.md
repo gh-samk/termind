@@ -19,6 +19,7 @@ Eine ruhige Alternative zu Calendly & Co.: eine Instanz pro Person oder kleinem 
 | <img src="docs/screenshots/profilseite.png" alt="Profilseite mit allen Terminseiten" width="420"> | <img src="docs/screenshots/admin-terminseite-editor.png" alt="Terminseite bearbeiten" width="420"> |
 | <img src="docs/screenshots/admin-verfuegbarkeit.png" alt="Verfügbarkeit mit Wochenzeiten und Ausnahmen" width="420"> | <img src="docs/screenshots/admin-ki-mcp.png" alt="KI-Anbindung per MCP mit Protokoll" width="420"> |
 | <img src="docs/screenshots/admin-mail-texte.png" alt="Mail-Texte mit Live-Vorschau" width="420"> | <img src="docs/screenshots/admin-termine-dunkel.png" alt="Dunkles Design" width="420"> |
+| <img src="docs/screenshots/admin-erste-schritte.png" alt="Willkommen und Checkliste „Erste Schritte“ nach der Einrichtung" width="420"> | <img src="docs/screenshots/admin-mail-assistent.png" alt="Mail-Versand mit Anbieter-Auswahl und Verbindungstest" width="420"> |
 
 <p align="center">
   <img src="docs/screenshots/mobil-buchung.png" alt="Buchungsseite auf dem Handy" width="260">
@@ -32,17 +33,21 @@ Eine ruhige Alternative zu Calendly & Co.: eine Instanz pro Person oder kleinem 
 
 ## Was termind kann
 
-- **Buchungsseiten** mit Monatskalender, freien Zeiten in der Zeitzone des Gastes, eigenen Formularfeldern, Einwilligung und Bestätigung. Deutsch und Englisch.
+- **Buchungsseiten** mit Monatskalender, freien Zeiten in der Zeitzone des Gastes (sichtbar angezeigt), eigenen Formularfeldern, Einwilligung und Bestätigung. Deutsch und Englisch, helles und dunkles Design nach Systemeinstellung, verständliche Fehlermeldungen direkt am Feld.
 - **Terminseiten** mit Dauer, Ort (Videolink, eigener Raum pro Termin, vor Ort, Telefon), Puffern, Mindestvorlauf, Buchungsfenster, Raster und optionaler Bestätigung durch dich.
-- **Verfügbarkeit** mit mehreren Zeitfenstern pro Tag, Urlaub und abweichenden Tagen.
+- **Verfügbarkeit** mit mehreren Zeitfenstern pro Tag, Urlaub und abweichenden Tagen. Eine gemeinsame Zeitzone für Profil und Verfügbarkeit, gewählt aus Klarnamen.
+- **Termine im Alltag**: Karte „Heute“, Filter nach Terminseite und Zeitraum, Reiter „Abgesagt“, frühere Termine eines Gastes, Notiz mit Autospeichern. Termine verschieben oder selbst eintragen (auch ohne Mail an den Gast und außerhalb der Verfügbarkeit).
 - **Kalender-Abgleich** mit Nextcloud, iCloud, mailbox.org, Fastmail & jedem CalDAV-Server (lesen und Termine eintragen) sowie ICS-Abos (Google, Outlook, Proton, nur lesen).
-- **E-Mails über dein eigenes SMTP**: Bestätigung, Anfrage, Erinnerung, Verschiebung, Absage, jeweils mit Kalenderdatei. Texte editierbar mit Live-Vorschau.
-- **Gäste verschieben oder sagen ab** über einen persönlichen Link, ohne Konto.
-- **Einbettung** in jede Webseite mit einer Zeile: im Text, als Button-Popup oder schwebend.
+- **E-Mails über dein eigenes SMTP** mit Mail-Assistent (Anbieter-Vorlagen, „Verbindung testen“ vor dem Speichern, Fehler in Klartext): Bestätigung, Anfrage, Erinnerung, Verschiebung, Absage, jeweils mit Kalenderdatei. Betreff mit Datum und Uhrzeit, Zeiten in der Zeitzone des Gastes, Antworten gehen an die richtige Person. Texte editierbar mit Live-Vorschau (auch in Handy-Breite).
+- **Direkt-Knöpfe „Bestätigen“ und „Ablehnen“** in der Anfrage-Mail, als sichere Einmal-Links, die erst nach einem Klick auf der Seite ausgeführt werden.
+- **Erste Schritte**: Checkliste mit Fortschritt, Begrüßung und Hinweisen, bis die Buchungsseite startklar ist.
+- **Gäste verschieben oder sagen ab** über einen persönlichen Link, ohne Konto, mit Rückfrage, „Bisher“-Anzeige und Kalender-Knöpfen (Apple / Outlook, Google).
+- **Einbettung** in jede Webseite mit einer Zeile: im Text, als Button-Popup oder schwebend, für einzelne Terminseiten und für die ganze Profilseite (mit Hinweisen für WordPress, Wix und Jimdo).
 - **KI-Verwaltung per MCP**: KI-Assistenten lesen Termine, finden freie Zeiten, buchen, verschieben, pflegen Terminseiten. Alles, was Gäste erreicht oder etwas löscht, braucht erst deine Zustimmung im Chat. Jede Aktion steht im KI-Protokoll.
 - **Webhooks** mit HMAC-Signatur für n8n, Make, Zapier.
 - **Datenschutz**: keine Cookies und keine fremden Server für Gäste, automatische Anonymisierung nach Frist, Auskunft und Löschung auf Knopfdruck.
-- **Sicherheit**: Passwort (Argon2id), Passkeys, Zwei-Faktor-Anmeldung, verschlüsselte Zugangsdaten, strenge Sicherheits-Header.
+- **Sicherheit**: Passwort (Argon2id), Passkeys, Zwei-Faktor-Anmeldung mit 10 Ersatzcodes, „Passwort vergessen“ per Mail-Link, Notfallbefehl für den Server, verschlüsselte Zugangsdaten, strenge Sicherheits-Header. Vor dem Entfernen von Kalendern, Webhooks, Schlüsseln, Zugängen und Passkeys fragt termind nach.
+- **Bedienung**: verständliche deutsche Fehlermeldungen, Fachbegriffe in Klartext mit ?-Erklärungen, Einstellungen mit Bereich „Erweitert“, große Touch-Flächen, Tastaturbedienung, gute Kontraste.
 
 ## Schnellstart (ein Server, eigene Domain)
 
@@ -61,20 +66,31 @@ Caddy holt das HTTPS-Zertifikat automatisch. Den **Einrichtungslink** findest du
 docker compose logs termind | grep setup
 ```
 
-Nur mit diesem Link lässt sich das erste Konto anlegen, damit niemand Fremdes eine frische Instanz übernimmt. Anschließend unter *Einstellungen → E-Mail* dein Postfach eintragen und die erste Terminseite anlegen.
+Nur mit diesem Link lässt sich das erste Konto anlegen, damit niemand Fremdes eine frische Instanz übernimmt. Der Link wird bis zur Einrichtung alle 10 Minuten neu ins Log geschrieben. Rufst du `/setup` ohne Link auf, kannst du den Code oder den ganzen Link in ein Feld einfügen. Anschließend führt dich die Checkliste „Erste Schritte“ durch Mail-Versand (unter *Einstellungen → E-Mail*, mit Anbieter-Auswahl und „Verbindung testen“), Verfügbarkeit und die erste Terminseite.
 
 ### Konfiguration
 
 | Variable | Bedeutung | Standard |
 | --- | --- | --- |
 | `PUBLIC_URL` | Öffentliche Adresse mit `https://` (Links in Mails, Passkeys, OAuth) | `http://localhost:3000` |
-| `TRUST_PROXY` | `true` hinter einem eigenen Reverse-Proxy (für korrekte Client-IP) | `false` |
+| `TRUST_PROXY` | `true` hinter einem Reverse-Proxy (für korrekte Client-IP, sonst teilen sich alle Besucher die Limits). Im mitgelieferten Setup schon gesetzt | `false` |
 | `DATA_DIR` | Datenbank, Schlüssel und Backups | `/data` |
 | `BACKUP_HOURS` / `BACKUP_KEEP` | Automatisches Backup alle n Stunden, Anzahl behaltener Kopien (`0` = aus) | `24` / `7` |
 | `CALENDAR_SYNC_MINUTES` | Abstand des Kalender-Abgleichs | `5` |
-| `ALLOW_PRIVATE_HOSTS` | `true` erlaubt Kalender/Webhooks im lokalen Netz (z. B. Nextcloud im LAN) | `false` |
+| `ALLOW_PRIVATE_HOSTS` | `true` erlaubt Kalender, Webhooks und **Mail-Server** im lokalen Netz (z. B. Nextcloud im LAN, lokales Mail-Relay). Ohne diese Einstellung lehnt termind private Adressen ab | `false` |
 | `APP_SECRET` | Eigener Schlüssel für gespeicherte Passwörter, mind. 16 Zeichen (sonst wird `secret.key` erzeugt) | – |
-| `SETUP_TOKEN` | Eigener Einrichtungsschlüssel (sonst wird einer erzeugt und ins Log geschrieben) | – |
+| `SETUP_TOKEN` | Optional: eigener Einrichtungscode (sonst wird einer erzeugt und ins Log geschrieben) | – |
+
+### Update
+
+```bash
+docker compose exec termind node server/index.js backup   # vorher sichern
+docker compose pull && docker compose up -d
+```
+
+Datenbank-Änderungen laufen beim Start automatisch. Was sich pro Version ändert, steht im [CHANGELOG](CHANGELOG.md).
+
+**Neu in 0.2.0:** Einrichtungs-Assistent mit Checkliste, Passwort-vergessen und Ersatzcodes, Termine verschieben und eintragen, Direkt-Knöpfe in Anfrage-Mails, überarbeitete Gastseiten und Mails, klarere Bedienung. **Betreiber mit lokalem Mail-Relay:** Mailserver in privaten Netzen (auch `127.0.0.1`) brauchen ab jetzt `ALLOW_PRIVATE_HOSTS=true`. Ausgesperrt? `docker compose exec termind node server/index.js reset-password du@example.de [--disable-2fa]` gibt einen Link zum Festlegen eines neuen Passworts aus.
 
 ### Backups
 
@@ -122,7 +138,7 @@ API-Schlüssel und OAuth-Zugänge gelten **nur am MCP-Endpunkt**, nicht für die
 }
 ```
 
-Werkzeuge u. a.: `get_overview`, `find_free_slots`, `list_bookings`, `book_appointment`, `reschedule_booking`, `cancel_booking`, `create_event_type`, `update_weekly_hours`, `add_exception`, `update_mail_text`, `export_personal_data`. Aktionen mit Gastkontakt, Datenabfluss (Webhooks) oder Löschen sowie Änderungen an Mail-Texten und Orten liefern zuerst eine Vorschau und laufen erst mit `confirm_action`.
+Werkzeuge u. a.: `get_overview`, `find_free_slots`, `list_bookings` (Ansichten `upcoming`, `pending`, `past`, `cancelled`, `all`), `book_appointment`, `reschedule_booking`, `cancel_booking`, `create_event_type`, `update_weekly_hours`, `add_exception`, `update_mail_text`, `export_personal_data`. Aktionen mit Gastkontakt, Datenabfluss (Webhooks) oder Löschen sowie Änderungen an Mail-Texten und Orten liefern zuerst eine Vorschau und laufen erst mit `confirm_action`.
 
 > **Hinweis zu Prompt-Injection:** Namen und Antworten von Gästen sind fremde Eingaben. termind kennzeichnet sie für die KI als Daten, doch keine KI ist dagegen völlig immun. Lies die Vorschau, bevor du einer Aktion zustimmst, und gib Assistenten, die nur lesen sollen, einen Lese-Schlüssel.
 

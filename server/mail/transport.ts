@@ -1,6 +1,7 @@
 import { lookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
 import nodemailer, { type Transporter } from 'nodemailer'
+import { z } from 'zod'
 import { allowPrivateEnv, isPrivateIp } from '../lib/safeFetch'
 import { decrypt, nowIso } from '../lib/util'
 import { AppError, invalid } from '../lib/errors'
@@ -110,23 +111,53 @@ export interface OutgoingMail {
   html: string
   text: string
   ics?: { content: string; method: 'REQUEST' | 'CANCEL' } | null
+  /** Antwortadresse dieser Mail (Gast-Mails: Gastgeber, Gastgeber-Mails: Gast) */
+  replyTo?: { name: string; email: string }
+  /** true: ein in den Einstellungen eingetragenes „Antworten an“ hat Vorrang vor replyTo (Gast-Mails). Gastgeber-Mails gehen immer an den Gast. */
+  replyOverridable?: boolean
+}
+
+const addressSchema = z.email().max(254)
+/** Steuerzeichen (auch Zeilenumbrüche) aus Namen und Betreffs entfernen: Schutz vor Header-Injection. */
+export const cleanHeader = (s: string) => s.replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, ' ').replace(/\s+/g, ' ').trim()
+
+/** Adresse nur in Objektform (name + address) und nur, wenn sie eine gültige, einzelne E-Mail-Adresse ist. */
+export function safeAddress(name: string, email: string): { name: string; address: string } | undefined {
+  // Roh prüfen (nicht vorher bereinigen): Adressen mit Zeilenumbruch, Leerzeichen oder Komma sind ungültig
+  if (!addressSchema.safeParse(email).success) return undefined
+  return { name: cleanHeader(name).slice(0, 200), address: email }
+}
+
+/**
+ * Baut die Nachricht für nodemailer. Alle Adressen gehen in Objektform durch safeAddress, der Betreff wird bereinigt.
+ * Reply-To: bei Gast-Mails zuerst das konfigurierte „Antworten an“, sonst der Gastgeber; bei Gastgeber-Mails der Gast.
+ * Eine ungültige Antwortadresse wird weggelassen, eine ungültige Empfängeradresse bricht ab.
+ */
+export function buildMessage(smtp: Pick<SmtpSettings, 'fromName' | 'fromEmail' | 'replyTo'>, m: OutgoingMail) {
+  const to = safeAddress(m.to.name, m.to.email)
+  if (!to) throw invalid('Die Empfängeradresse ist ungültig.')
+  const configured = smtp.replyTo ? safeAddress('', smtp.replyTo) : undefined
+  const own = m.replyTo ? safeAddress(m.replyTo.name, m.replyTo.email) : undefined
+  const replyTo = m.replyOverridable || !m.replyTo ? (configured ?? own) : (own ?? configured)
+  return {
+    from: { name: cleanHeader(smtp.fromName), address: smtp.fromEmail },
+    ...(replyTo ? { replyTo } : {}),
+    to,
+    subject: cleanHeader(m.subject),
+    text: m.text,
+    html: m.html,
+    /*
+     * Genau ein Kalenderteil: die text/calendar-Alternative mit method (so erkennen Outlook, Apple Kalender und Gmail die Einladung).
+     * nodemailers `icalEvent` hängt zusätzlich immer eine Datei an (zwei Teile, Clients könnten doppelt importieren).
+     * Wer die Einladung als Datei braucht, nutzt den Knopf „Zum Kalender hinzufügen“.
+     */
+    ...(m.ics ? { alternatives: [{ contentType: `text/calendar; charset=utf-8; method=${m.ics.method}`, content: m.ics.content }] } : {}),
+  }
 }
 
 export async function sendMail(m: OutgoingMail) {
   const { transporter, smtp } = await getTransport()
-  await transporter.sendMail({
-    from: { name: smtp.fromName, address: smtp.fromEmail },
-    replyTo: smtp.replyTo || undefined,
-    to: { name: m.to.name, address: m.to.email },
-    subject: m.subject,
-    text: m.text,
-    html: m.html,
-    ...(m.ics
-      ? {
-          icalEvent: { method: m.ics.method, content: m.ics.content, filename: m.ics.method === 'CANCEL' ? 'abgesagt.ics' : 'termin.ics' },
-        }
-      : {}),
-  })
+  await transporter.sendMail(buildMessage(smtp, m))
 }
 
 /** Verbindung prüfen und Testmail senden. Bei Erfolg merkt sich termind den Zeitpunkt (für die Checkliste „Erste Schritte“). */

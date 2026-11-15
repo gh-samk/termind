@@ -1,8 +1,8 @@
-import { and, asc, desc, eq, gt, inArray, like, lt, ne, or } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt, gte, inArray, isNull, like, lt, ne, notInArray, or } from 'drizzle-orm'
 import { bookingCreateSchema } from '../../shared/schemas'
 import type { Answer, BookingStatus, Location, SlotMap } from '../../shared/types'
 import { db } from '../db/client'
-import { bookings, eventTypes, users } from '../db/schema'
+import { actionTokens, bookings, eventTypes, users } from '../db/schema'
 import { type Actor, requireHost, requireWrite } from '../lib/actor'
 import { AppError, invalid, notFound } from '../lib/errors'
 import { addDays, canonicalTimeZone, dateInTz, formatDateTime, isValidTimeZone } from '../lib/time'
@@ -69,8 +69,10 @@ export async function getSlots(ev: EventTypeRow, from: string, to: string, rawTz
 /* ---------------- Lesen ---------------- */
 
 export interface BookingListFilter {
-  view?: 'upcoming' | 'pending' | 'past' | 'all'
+  /** cancelled = abgesagte und abgelehnte Termine, past = vergangene ohne die abgesagten */
+  view?: 'upcoming' | 'pending' | 'past' | 'cancelled' | 'all'
   q?: string
+  eventTypeId?: string
   from?: string
   to?: string
   limit?: number
@@ -83,9 +85,12 @@ export async function listBookings(actor: Actor, f: BookingListFilter = {}) {
   const view = f.view ?? 'upcoming'
   if (view === 'upcoming') conds.push(gt(bookings.endsAt, now), inArray(bookings.status, ACTIVE))
   if (view === 'pending') conds.push(eq(bookings.status, 'pending'), gt(bookings.endsAt, now))
-  if (view === 'past') conds.push(lt(bookings.startsAt, now))
-  if (f.from) conds.push(gt(bookings.startsAt, f.from))
-  if (f.to) conds.push(lt(bookings.startsAt, f.to))
+  if (view === 'past') conds.push(lt(bookings.startsAt, now), notInArray(bookings.status, ['cancelled', 'declined']))
+  if (view === 'cancelled') conds.push(inArray(bookings.status, ['cancelled', 'declined']))
+  if (f.eventTypeId) conds.push(eq(bookings.eventTypeId, f.eventTypeId))
+  // Zeitpunkte vereinheitlichen, gespeichert wird immer als ISO in UTC
+  if (f.from) conds.push(gte(bookings.startsAt, new Date(f.from).toISOString()))
+  if (f.to) conds.push(lt(bookings.startsAt, new Date(f.to).toISOString()))
   if (f.q) {
     const q = `%${f.q.replace(/[%_]/g, '')}%`
     conds.push(or(like(bookings.guestName, q), like(bookings.guestEmail, q))!)
@@ -95,9 +100,9 @@ export async function listBookings(actor: Actor, f: BookingListFilter = {}) {
     .from(bookings)
     .innerJoin(eventTypes, eq(eventTypes.id, bookings.eventTypeId))
     .where(and(...conds))
-    .orderBy(view === 'past' ? desc(bookings.startsAt) : asc(bookings.startsAt))
+    .orderBy(view === 'past' || view === 'cancelled' ? desc(bookings.startsAt) : asc(bookings.startsAt))
     .limit(Math.min(f.limit ?? 200, 500))
-  await audit(actor, 'Termine gelesen', `Ansicht: ${view}${f.q ? `, Suche: ${f.q}` : ''}`, 'read')
+  await audit(actor, 'Termine gelesen', `Ansicht: ${view}${f.q ? ', Suche aktiv' : ''}`, 'read')
   return rows.map((r) => ({ ...r.b, eventTitle: r.eventTitle, eventColor: r.eventColor }))
 }
 
@@ -106,6 +111,23 @@ export async function getBooking(actor: Actor, id: string) {
   const b = await db.query.bookings.findFirst({ where: and(eq(bookings.id, id), eq(bookings.hostId, a.userId)) })
   if (!b) throw notFound('Termin')
   return b
+}
+
+/** Andere Termine desselben Gastes (per E-Mail-Adresse) vor diesem Termin, nur beim eigenen Gastgeber. */
+export async function guestHistory(actor: Actor, id: string, limit = 20) {
+  const a = requireHost(actor)
+  const b = await getBooking(actor, id)
+  const where = and(eq(bookings.hostId, a.userId), eq(bookings.guestEmail, b.guestEmail), ne(bookings.id, b.id), lt(bookings.startsAt, b.startsAt))
+  const rows = await db
+    .select({ id: bookings.id, startsAt: bookings.startsAt, status: bookings.status, eventTitle: eventTypes.title })
+    .from(bookings)
+    .innerJoin(eventTypes, eq(eventTypes.id, bookings.eventTypeId))
+    .where(where)
+    .orderBy(desc(bookings.startsAt))
+    .limit(Math.min(limit, 50))
+  const [{ total }] = await db.select({ total: count() }).from(bookings).where(where)
+  await audit(actor, 'Frühere Termine eines Gastes gelesen', `(#${b.id.slice(0, 8)})`, 'read')
+  return { total, items: rows }
 }
 
 export async function getBookingByToken(token: string) {
@@ -123,11 +145,11 @@ function resolveLocation(l: Location): Location {
   return l
 }
 
-function collectAnswers(ev: EventTypeRow, raw: Record<string, string>): Answer[] {
+function collectAnswers(ev: EventTypeRow, raw: Record<string, string>, lenient = false): Answer[] {
   const out: Answer[] = []
   for (const f of effectiveFields(ev)) {
     const v = (raw[f.id] ?? '').trim()
-    if (f.required && (!v || (f.type === 'checkbox' && v !== 'true'))) throw invalid(`Bitte „${f.label}“ ausfüllen.`)
+    if (!lenient && f.required && (!v || (f.type === 'checkbox' && v !== 'true'))) throw invalid(`Bitte „${f.label}“ ausfüllen.`)
     if (f.type === 'phone' && v && !/^[+0-9 ()/.-]{3,40}$/.test(v)) throw invalid(`Bitte eine gültige Telefonnummer bei „${f.label}“ angeben.`)
     if (f.type === 'select' && v && f.options && !f.options.includes(v)) throw invalid(`Ungültige Auswahl bei „${f.label}“.`)
     if (v) out.push({ fieldId: f.id, label: f.label, value: f.type === 'checkbox' ? (v === 'true' ? 'Ja' : 'Nein') : v })
@@ -156,12 +178,20 @@ export async function createBooking(actor: Actor, raw: unknown) {
     if (a.userId !== ev.userId) throw notFound('Terminseite')
   }
 
-  const answers = collectAnswers(ev, input.answers)
+  // Gastgeber tragen oft aus dem Kopf ein: Pflichtfelder des Formulars gelten nur für Gäste und KI-Zugriffe
+  const answers = collectAnswers(ev, input.answers, actor.type === 'user')
   const start = new Date(input.start)
   const end = new Date(start.getTime() + ev.duration * 60_000)
   const day = dateInTz(start, input.timezone)
-  const ctx = await slotContext(ev, input.timezone, day, day)
-  if (!isSlotAvailable(start.toISOString(), ctx)) throw new AppError('slot_taken', 'Diese Zeit ist leider nicht mehr frei. Bitte wähle eine andere.')
+  // Nur Gastgeber dürfen außerhalb der Verfügbarkeit eintragen, Überschneidungen mit Terminen bleiben ausgeschlossen (siehe unten)
+  const anyTime = !isGuest && !!input.anyTime
+  const notifyGuest = isGuest || input.notifyGuest !== false
+  if (anyTime) {
+    if (start.getTime() < Date.now() - 60_000) throw invalid('Bitte wähle eine Zeit in der Zukunft.')
+  } else {
+    const ctx = await slotContext(ev, input.timezone, day, day)
+    if (!isSlotAvailable(start.toISOString(), ctx)) throw new AppError('slot_taken', 'Diese Zeit ist leider nicht mehr frei. Bitte wähle eine andere.')
+  }
 
   // Gastgeber buchen direkt, Gäste ggf. als Anfrage
   const status: BookingStatus = isGuest && ev.requiresConfirmation ? 'pending' : 'confirmed'
@@ -181,6 +211,8 @@ export async function createBooking(actor: Actor, raw: unknown) {
     answers,
     location: resolveLocation(ev.location),
     status,
+    note: isGuest ? '' : (input.note ?? '').trim(),
+    notifyGuest,
     createdVia: actor.type === 'token' ? ('mcp' as const) : actor.type === 'user' ? ('admin' as const) : ('web' as const),
   }
 
@@ -198,12 +230,12 @@ export async function createBooking(actor: Actor, raw: unknown) {
     await tx.insert(bookings).values(row)
   })
 
-  await enqueueBookingMail(row.id, status === 'pending' ? 'guest.requested' : 'guest.confirmed')
+  if (notifyGuest) await enqueueBookingMail(row.id, status === 'pending' ? 'guest.requested' : 'guest.confirmed')
   await enqueueBookingMail(row.id, status === 'pending' ? 'host.requested' : 'host.new')
-  if (status === 'confirmed') await afterConfirmed({ ...row, sequence: 0 }, ev)
+  if (status === 'confirmed') await afterConfirmed({ ...row, sequence: 0 }, ev, notifyGuest)
   await emitBookingEvent(row.hostId, status === 'pending' ? 'booking.requested' : 'booking.created', row.id)
   // Im Protokoll keine Gastnamen (Datenschutz), nur Terminart, Zeit und Kurz-ID
-  await audit(actor, status === 'pending' ? 'Anfrage eingegangen' : 'Termin gebucht', `${ev.title}, ${await when(row.startsAt, row.hostId)} (#${row.id.slice(0, 8)})`, 'write')
+  await audit(actor, status === 'pending' ? 'Anfrage eingegangen' : 'Termin gebucht', `${ev.title}, ${await when(row.startsAt, row.hostId)} (#${row.id.slice(0, 8)})${notifyGuest ? '' : ', ohne Mail an den Gast'}`, 'write')
   return row
 }
 
@@ -212,9 +244,9 @@ export async function createBooking(actor: Actor, raw: unknown) {
 const ref = (b: { id: string }) => `#${b.id.slice(0, 8)}`
 
 /** Kalendereintrag schreiben und Erinnerungen planen. */
-async function afterConfirmed(b: { id: string; startsAt: string; sequence: number }, ev: Pick<EventTypeRow, 'reminders'>) {
+async function afterConfirmed(b: { id: string; startsAt: string; sequence: number }, ev: Pick<EventTypeRow, 'reminders'>, remindGuest = true) {
   await enqueueCalendarSync(b.id)
-  await scheduleReminders(b, ev.reminders)
+  if (remindGuest) await scheduleReminders(b, ev.reminders)
 }
 
 /** Vergangene Termine nicht mehr absagen oder bestätigen (der Gast bekäme sonst sinnlose Mails). */
@@ -228,8 +260,24 @@ async function eventOf(b: BookingRow) {
   return ev
 }
 
+/** Alle offenen Direkt-Knöpfe (Mail-Links) einer Buchung entwerten: bei jeder Änderung des Termins. */
+async function voidActionTokens(bookingId: string, conn: Pick<typeof db, 'update'> = db) {
+  await conn.update(actionTokens).set({ usedAt: nowIso() }).where(and(eq(actionTokens.bookingId, bookingId), isNull(actionTokens.usedAt)))
+}
+
+/**
+ * Statuswechsel atomar: nur wenn Status und Änderungszähler noch so sind, wie sie gelesen wurden.
+ * So kann derselbe Termin nicht gleichzeitig (Oberfläche, Mail-Knopf, Gast, MCP) bestätigt und abgelehnt werden.
+ * Erhöht sequence und entwertet alle Aktions-Token der Buchung.
+ */
 async function setStatus(b: BookingRow, status: BookingStatus, extra: Partial<BookingRow> = {}) {
-  await db.update(bookings).set({ status, sequence: b.sequence + 1, updatedAt: nowIso(), ...extra }).where(eq(bookings.id, b.id))
+  const rows = await db
+    .update(bookings)
+    .set({ status, sequence: b.sequence + 1, updatedAt: nowIso(), ...extra })
+    .where(and(eq(bookings.id, b.id), eq(bookings.status, b.status), eq(bookings.sequence, b.sequence)))
+    .returning({ id: bookings.id })
+  if (rows.length !== 1) throw invalid(b.status === 'pending' ? 'Diese Anfrage wurde schon bearbeitet.' : 'Dieser Termin wurde gerade geändert. Bitte lade die Seite neu.')
+  await voidActionTokens(b.id)
 }
 
 export async function cancelBooking(actor: Actor, id: string, reason?: string) {
@@ -239,7 +287,7 @@ export async function cancelBooking(actor: Actor, id: string, reason?: string) {
   assertNotPast(b)
   const wasPending = b.status === 'pending'
   await setStatus(b, wasPending ? 'declined' : 'cancelled', { cancelReason: reason ?? null, cancelledBy: 'host' })
-  await enqueueBookingMail(b.id, wasPending ? 'guest.declined' : 'guest.cancelled')
+  if (b.notifyGuest) await enqueueBookingMail(b.id, wasPending ? 'guest.declined' : 'guest.cancelled')
   await enqueueCalendarSync(b.id)
   await emitBookingEvent(b.hostId, wasPending ? 'booking.declined' : 'booking.cancelled', b.id)
   await audit(actor, wasPending ? 'Anfrage abgelehnt' : 'Termin abgesagt', `${await when(b.startsAt, b.hostId)} (${ref(b)})`, 'write')
@@ -252,8 +300,8 @@ export async function acceptBooking(actor: Actor, id: string) {
   if (b.status !== 'pending') throw invalid('Nur offene Anfragen können bestätigt werden.')
   assertNotPast(b)
   await setStatus(b, 'confirmed')
-  await enqueueBookingMail(b.id, 'guest.confirmed')
-  await afterConfirmed({ ...b, sequence: b.sequence + 1 }, await eventOf(b))
+  if (b.notifyGuest) await enqueueBookingMail(b.id, 'guest.confirmed')
+  await afterConfirmed({ ...b, sequence: b.sequence + 1 }, await eventOf(b), b.notifyGuest)
   await emitBookingEvent(b.hostId, 'booking.confirmed', b.id)
   await audit(actor, 'Anfrage bestätigt', `${await when(b.startsAt, b.hostId)} (${ref(b)})`, 'write')
   return getBooking(actor, id)
@@ -266,22 +314,32 @@ export async function updateBookingNote(actor: Actor, id: string, note: string) 
   return getBooking(actor, id)
 }
 
-/** Wie oft ein Termin höchstens verschoben werden kann (Schutz vor Mail-Flut über den Gast-Link). */
+/**
+ * Wie oft ein Gast einen Termin höchstens verschieben kann (Schutz vor Mail-Flut über den Gast-Link).
+ * Der Verschiebegrund des Gastgebers liegt in cancelReason; jede Absage, Ablehnung und jedes weitere
+ * Verschieben setzt das Feld neu (auch auf null), er vermischt sich also nie mit späteren Mails.
+ */
 const MAX_MOVES = 10
 
-async function moveBooking(b: BookingRow, newStart: string, by: 'host' | 'guest', reason?: string) {
+async function moveBooking(b: BookingRow, newStart: string, by: 'host' | 'guest', reason?: string, opts: { anyTime?: boolean } = {}) {
   const ev = await db.query.eventTypes.findFirst({ where: eq(eventTypes.id, b.eventTypeId) })
   if (!ev) throw notFound('Terminseite')
   if (by === 'guest' && !ev.active) throw invalid('Diese Terminseite nimmt keine Buchungen mehr an. Bitte melde dich direkt.')
-  if (b.sequence >= MAX_MOVES * 2) throw invalid('Dieser Termin wurde schon sehr oft geändert. Bitte melde dich direkt.')
+  // Die Grenze schützt vor Mail-Fluten über den Gast-Link; Gastgeber verschieben unbegrenzt.
+  if (by === 'guest' && b.guestMoves >= MAX_MOVES) throw invalid('Dieser Termin wurde schon sehr oft geändert. Bitte melde dich direkt.')
   const start = new Date(newStart)
   const duration = new Date(b.endsAt).getTime() - new Date(b.startsAt).getTime()
   const end = new Date(start.getTime() + duration)
   const day = dateInTz(start, b.guestTimezone)
-  // Prüfen mit der Dauer und den Puffern dieses Termins, nicht mit der (evtl. geänderten) Terminseite
-  const ctx = await slotContext(ev, b.guestTimezone, day, day, b.id)
-  ctx.rules = { ...ev, duration: Math.round(duration / 60_000), bufferBefore: b.bufferBefore, bufferAfter: b.bufferAfter }
-  if (!isSlotAvailable(start.toISOString(), ctx)) throw new AppError('slot_taken', 'Diese Zeit ist leider nicht frei.')
+  if (by === 'host' && opts.anyTime) {
+    // Gastgeber dürfen auch außerhalb der Verfügbarkeit verschieben; Überschneidungen prüft die Transaktion unten
+    if (start.getTime() < Date.now() - 60_000) throw invalid('Bitte wähle eine Zeit in der Zukunft.')
+  } else {
+    // Prüfen mit der Dauer und den Puffern dieses Termins, nicht mit der (evtl. geänderten) Terminseite
+    const ctx = await slotContext(ev, b.guestTimezone, day, day, b.id)
+    ctx.rules = { ...ev, duration: Math.round(duration / 60_000), bufferBefore: b.bufferBefore, bufferAfter: b.bufferAfter }
+    if (!isSlotAvailable(start.toISOString(), ctx)) throw new AppError('slot_taken', 'Diese Zeit ist leider nicht frei.')
+  }
   // Verschiebt ein Gast einen Termin auf einer Seite mit Bestätigungspflicht, wird er wieder zur Anfrage
   const status: BookingStatus = by === 'guest' && ev.requiresConfirmation ? 'pending' : b.status
   await db.transaction(async (tx) => {
@@ -296,28 +354,34 @@ async function moveBooking(b: BookingRow, newStart: string, by: 'host' | 'guest'
       columns: { id: true },
     })
     if (clash) throw new AppError('slot_taken', 'Diese Zeit ist leider nicht frei.')
-    await tx
+    const moved = await tx
       .update(bookings)
-      .set({ startsAt: start.toISOString(), endsAt: end.toISOString(), status, sequence: b.sequence + 1, updatedAt: nowIso(), cancelReason: reason ?? null })
-      .where(eq(bookings.id, b.id))
+      .set({ startsAt: start.toISOString(), endsAt: end.toISOString(), status, sequence: b.sequence + 1, guestMoves: b.guestMoves + (by === 'guest' ? 1 : 0), updatedAt: nowIso(), cancelReason: reason ?? null })
+      .where(and(eq(bookings.id, b.id), eq(bookings.sequence, b.sequence), eq(bookings.status, b.status)))
+      .returning({ id: bookings.id })
+    if (moved.length !== 1) throw invalid(b.status === 'pending' ? 'Diese Anfrage wurde schon bearbeitet.' : 'Dieser Termin wurde gerade geändert. Bitte lade die Seite neu.')
+    await voidActionTokens(b.id, tx)
   })
-  if (status === 'pending' && b.status === 'confirmed') {
+  // Verschiebt der Gast und das Ergebnis ist eine offene Anfrage (neu oder weiterhin): neue Wunschzeit anfragen
+  if (status === 'pending' && by === 'guest') {
+    // Gast-eigene Aktion: seine Bestätigung kommt immer
     await enqueueBookingMail(b.id, 'guest.requested')
     await enqueueBookingMail(b.id, 'host.requested')
-    await enqueueCalendarSync(b.id)
+    if (b.status === 'confirmed') await enqueueCalendarSync(b.id)
   } else {
-    await enqueueBookingMail(b.id, 'guest.rescheduled')
-    if (by === 'guest') await enqueueBookingMail(b.id, 'host.rescheduled')
-    if (status === 'confirmed') await afterConfirmed({ id: b.id, startsAt: start.toISOString(), sequence: b.sequence + 1 }, ev)
+    const was = { oldStart: b.startsAt, oldEnd: b.endsAt } // alte Zeit für „Bisher“ in der Mail
+    if (by === 'guest' || b.notifyGuest) await enqueueBookingMail(b.id, 'guest.rescheduled', new Date(), was)
+    if (by === 'guest') await enqueueBookingMail(b.id, 'host.rescheduled', new Date(), was)
+    if (status === 'confirmed') await afterConfirmed({ id: b.id, startsAt: start.toISOString(), sequence: b.sequence + 1 }, ev, by === 'guest' || b.notifyGuest)
   }
   await emitBookingEvent(b.hostId, 'booking.rescheduled', b.id)
 }
 
-export async function rescheduleBooking(actor: Actor, id: string, newStart: string, reason?: string) {
+export async function rescheduleBooking(actor: Actor, id: string, newStart: string, reason?: string, opts: { anyTime?: boolean } = {}) {
   requireWrite(actor)
   const b = await getBooking(actor, id)
   if (!ACTIVE.includes(b.status)) throw invalid('Abgesagte Termine können nicht verschoben werden.')
-  await moveBooking(b, newStart, 'host', reason)
+  await moveBooking(b, newStart, 'host', reason, opts)
   await audit(actor, 'Termin verschoben', `${await when(b.startsAt, b.hostId)} → ${await when(newStart, b.hostId)} (${ref(b)})`, 'write')
   return getBooking(actor, id)
 }
@@ -329,7 +393,7 @@ export async function guestCancel(token: string, reason?: string) {
   if (!ACTIVE.includes(b.status)) throw invalid('Dieser Termin ist bereits abgesagt.')
   if (new Date(b.startsAt) < new Date()) throw invalid('Vergangene Termine können nicht abgesagt werden.')
   await setStatus(b, 'cancelled', { cancelReason: reason ?? null, cancelledBy: 'guest' })
-  await enqueueBookingMail(b.id, 'guest.cancelled')
+  await enqueueBookingMail(b.id, 'guest.cancelledSelf', new Date(), b.status === 'pending' ? { wasPending: true } : {})
   await enqueueBookingMail(b.id, 'host.cancelled')
   await enqueueCalendarSync(b.id)
   await emitBookingEvent(b.hostId, 'booking.cancelled', b.id)

@@ -15,6 +15,8 @@ export interface IcsEvent {
   attendee: { name: string; email: string }
   /** Erinnerung 15 Min. vorher */
   alarm?: boolean
+  /** Sprache des Erinnerungstexts (Standard: de) */
+  locale?: 'de' | 'en'
 }
 
 const stamp = (d: Date) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
@@ -62,7 +64,7 @@ export function buildIcs(e: IcsEvent) {
     `ORGANIZER;CN=${cn(e.organizer.name)}:mailto:${uri(e.organizer.email)}`,
     `ATTENDEE;CN=${cn(e.attendee.name)};ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED:mailto:${uri(e.attendee.email)}`,
     `STATUS:${e.method === 'CANCEL' ? 'CANCELLED' : 'CONFIRMED'}`,
-    ...(e.alarm === false ? [] : ['BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:Erinnerung', 'TRIGGER:-PT15M', 'END:VALARM']),
+    ...(e.alarm === false ? [] : ['BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${e.locale === 'en' ? 'Reminder' : 'Erinnerung'}`, 'TRIGGER:-PT15M', 'END:VALARM']),
     'END:VEVENT',
     'END:VCALENDAR',
   ]

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { safeHttpUrl } from './url'
 
 /* Eingabe-Schemas. Werden von REST, MCP und Web-Formularen gemeinsam genutzt. */
 
@@ -37,7 +38,7 @@ export const locationSchema = z.object({
   kind: z.enum(['video', 'video-template', 'onsite', 'phone-host-calls', 'phone-guest-calls']),
   value: z.string().max(500).default(''),
   label: z.string().max(40).optional(),
-})
+}).refine((l) => (l.kind !== 'video' && l.kind !== 'video-template') || /^https:\/\//i.test(l.value) && safeHttpUrl(l.value.replaceAll('{id}', 'x')) !== null, { message: 'Bitte gib einen Link beginnend mit https:// an.', path: ['value'] })
 
 export const fieldSchema = z.object({
   id: z.string().regex(/^[A-Za-z0-9_-]{1,40}$/),
@@ -99,10 +100,14 @@ export const bookingCreateSchema = z.object({
   locale: z.enum(['de', 'en']).default('de'),
   answers: z.record(z.string(), z.string().max(4000)).default({}),
   consent: z.boolean().optional(),
+  /** Nur für Gastgeber: Termin selbst eintragen. Für Gäste werden diese Felder ignoriert. */
+  notifyGuest: z.boolean().default(true),
+  anyTime: z.boolean().optional(),
+  note: z.string().max(4000).optional(),
 })
 
 export const cancelSchema = z.object({ reason: z.string().max(1000).optional() })
-export const rescheduleSchema = z.object({ start: z.iso.datetime({ offset: true }), reason: z.string().max(1000).optional() })
+export const rescheduleSchema = z.object({ start: z.iso.datetime({ offset: true }), reason: z.string().max(1000).optional(), anyTime: z.boolean().optional() })
 
 export const smtpSchema = z.object({
   host: z.string().min(1),
@@ -154,3 +159,7 @@ export const setupSchema = z.object({
 
 export type EventTypeInput = z.input<typeof eventTypeSchema>
 export type BookingCreateInput = z.input<typeof bookingCreateSchema>
+
+/** Direkt-Knopf aus der Anfrage-Mail: optionale Nachricht an den Gast beim Ablehnen */
+export const ACTION_MESSAGE_MAX = 500
+export const actionExecuteSchema = z.object({ message: z.string().max(ACTION_MESSAGE_MAX).optional() })

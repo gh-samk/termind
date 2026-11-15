@@ -205,8 +205,8 @@ export function buildMcpServer(actor: TokenActor) {
     'list_bookings',
     {
       title: 'Termine auflisten',
-      description: 'Termine filtern: upcoming (anstehend), pending (offene Anfragen), past (vergangen), all. Optional Suche nach Name/E-Mail.',
-      inputSchema: { view: z.enum(['upcoming', 'pending', 'past', 'all']).default('upcoming'), q: z.string().optional(), limit: z.number().int().max(200).optional() },
+      description: 'Termine filtern: upcoming (anstehend), pending (offene Anfragen), past (vergangen, ohne abgesagte oder abgelehnte), cancelled (abgesagt und abgelehnt), all. Optional Suche nach Name/E-Mail.',
+      inputSchema: { view: z.enum(['upcoming', 'pending', 'past', 'cancelled', 'all']).default('upcoming'), q: z.string().optional(), limit: z.number().int().max(200).optional() },
       annotations: RO,
     },
     ({ view, q, limit }) =>
@@ -219,7 +219,7 @@ export function buildMcpServer(actor: TokenActor) {
   server.registerTool('get_booking', { title: 'Termin lesen', description: 'Ein Termin mit allen Angaben des Gastes.', inputSchema: { id: z.string() }, annotations: RO }, ({ id }) =>
     run(async () => {
       const b = await bookings.getBooking(actor, id)
-      await audit(actor, 'Termin gelesen', b.guestName, 'read')
+      await audit(actor, 'Termin gelesen', `#${b.id.slice(0, 8)}`, 'read')
       return ok(bookingView(b, await tzOf()))
     }),
   )

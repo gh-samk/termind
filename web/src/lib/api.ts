@@ -4,6 +4,8 @@ export class ApiError extends Error {
     public status: number,
     public code: string,
     message: string,
+    /** Feldbezogene Prüffehler vom Server (Pfad + Meldung), falls vorhanden */
+    public issues?: { path: (string | number)[]; message: string; code?: string }[],
   ) {
     super(message)
   }
@@ -30,7 +32,7 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
     // Fehlerkörper ist normalerweise { error: { code, message } }, ein reiner Text wird ebenfalls angezeigt
     const err = data?.error
     const message = typeof err === 'string' ? err : err?.message
-    throw new ApiError(res.status, (typeof err === 'object' && err?.code) || 'error', message ?? 'Da ist etwas schiefgelaufen. Bitte versuch es noch einmal.')
+    throw new ApiError(res.status, (typeof err === 'object' && err?.code) || 'error', message ?? 'Da ist etwas schiefgelaufen. Bitte versuch es noch einmal.', Array.isArray(err?.issues) ? err.issues : undefined)
   }
   return data as T
 }

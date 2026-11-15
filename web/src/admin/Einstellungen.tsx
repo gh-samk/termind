@@ -11,12 +11,13 @@ import { api, errorMessage } from '../lib/api'
 import { ACCENT_HUES } from '../lib/colors'
 import { cn } from '../lib/cn'
 import { setAccentHue } from '../lib/theme'
-import { Avatar, Badge, Button, Card, ConfirmDialog, CopyButton, Dialog, Field, Hint, Input, SectionHeader, Select, Switch, toast, useFieldProps } from '../ui'
+import { Avatar, Badge, Button, Card, ConfirmDialog, CopyButton, Dialog, Field, Hint, Input, SaveBar, SectionHeader, Select, Switch, toast, useFieldProps } from '../ui'
 import { ErrorBox, PageHeader } from './AdminShell'
 import { KalenderSettings } from './Kalender'
 import { MailTexte } from './MailTexte'
 import { PrivacyTools, WebhooksSettings } from './WebhooksPrivacy'
 import type { SettingsData } from './types'
+import { useUnsavedGuard } from './unsaved'
 
 const sections = [
   { id: 'profil', label: 'Profil & Marke', icon: Palette },
@@ -104,8 +105,13 @@ function Profil() {
   const qc = useQueryClient()
   const s = useSettings()
   const [p, setP] = useState({ name: me.name, subtitle: me.subtitle, handle: me.handle, timezone: me.timezone })
+  // Stand des zuletzt gespeicherten Profils, damit „ungespeichert“ sofort nach dem Speichern verschwindet
+  const [saved, setSaved] = useState(p)
+  const dirty = JSON.stringify(p) !== JSON.stringify(saved)
   const [instanceName, setInstanceName] = useState('')
   const brandLoaded = useRef(false)
+  const instanceDirty = !!s.data && brandLoaded.current && instanceName !== s.data.branding.instanceName
+  const guard = useUnsavedGuard(dirty || instanceDirty)
   useEffect(() => {
     if (s.data && !brandLoaded.current) {
       brandLoaded.current = true
@@ -115,7 +121,7 @@ function Profil() {
 
   const saveProfile = useMutation({
     mutationFn: () => api('/api/me', { method: 'PATCH', body: p }),
-    onSuccess: () => { refresh(); qc.invalidateQueries({ queryKey: ['schedule'] }); qc.invalidateQueries({ queryKey: ['slots'] }); toast('Profil gespeichert') },
+    onSuccess: () => { setSaved(p); refresh(); qc.invalidateQueries({ queryKey: ['schedule'] }); qc.invalidateQueries({ queryKey: ['slots'] }); toast('Profil gespeichert') },
   })
   const saveBrand = useMutation({
     mutationFn: (b: { accentHue?: number; instanceName?: string }) => api('/api/settings/branding', { method: 'PUT', body: b }),
@@ -127,7 +133,7 @@ function Profil() {
     <div className="flex flex-col gap-6">
       <Card className="p-6">
         <SectionHeader title="Profil" description="So erscheinst du auf deinen Buchungsseiten." />
-        <form className="mt-5" onSubmit={(e) => { e.preventDefault(); saveProfile.mutate() }}>
+        <form id="profil-form" className="mt-5" onSubmit={(e) => { e.preventDefault(); saveProfile.mutate() }}>
           <div className="flex items-center gap-4"><Avatar name={p.name || '?'} size={56} /></div>
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             <Field label="Name" htmlFor="pn" required><Input id="pn" required value={p.name} onChange={(e) => setP({ ...p, name: e.target.value })} /></Field>
@@ -165,6 +171,8 @@ function Profil() {
           </form>
         </Card>
       )}
+      <SaveBar show={dirty} pending={saveProfile.isPending} formId="profil-form" />
+      {guard.dialog}
     </div>
   )
 }

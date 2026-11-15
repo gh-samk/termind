@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './auth/useAuth'
+import { AktionPage } from './public/AktionPage'
 import { EventPage, ManagePage, ProfilePage } from './public/PublicPages'
 
 /* Die Buchungsseite bleibt klein: Admin und Anmeldung werden erst bei Bedarf geladen. */
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="einstellungen/:tab" element={<Einstellungen />} />
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Route>
+        <Route path="/aktion/:token" element={<AktionPage />} />
         <Route path="/b/:token" element={<ManagePage />} />
         <Route path="/:handle" element={<ProfilePage />} />
         <Route path="/:handle/:slug" element={<EventPage />} />

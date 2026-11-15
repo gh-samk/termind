@@ -5,7 +5,8 @@ import { forbidden } from './errors'
  * So gelten dieselben Regeln für Oberfläche, REST-API und MCP.
  */
 export type Actor =
-  | { type: 'user'; userId: string; role: 'owner' | 'member' }
+  /** via: 'mail-link' = Einmal-Link aus einer Mail (Aktions-Token) statt Anmeldung; das Protokoll vermerkt es. */
+  | { type: 'user'; userId: string; role: 'owner' | 'member'; via?: 'mail-link' }
   | { type: 'token'; userId: string; role: 'owner' | 'member'; tokenId: string; scope: 'read' | 'write'; client: string }
   | { type: 'guest' }
   | { type: 'system' }

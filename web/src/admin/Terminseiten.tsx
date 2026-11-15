@@ -1,6 +1,6 @@
 import * as DM from '@radix-ui/react-dropdown-menu'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Clock, Copy, ExternalLink, MoreHorizontal, Plus, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Clock, Copy, Eye, ExternalLink, MoreHorizontal, Plus, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { FieldType, FormField, LocationKind } from '@shared/types'
@@ -10,10 +10,11 @@ import { api, errorMessage } from '../lib/api'
 import { cn } from '../lib/cn'
 import { ACCENT_HUES } from '../lib/colors'
 import { fmtDuration } from '../lib/format'
-import { Badge, Button, Card, ConfirmDialog, CopyButton, Dialog, Field, Input, SectionHeader, Select, Switch, Textarea, toast, useRovingRadio } from '../ui'
+import { Badge, Button, Card, ConfirmDialog, CopyButton, Dialog, Field, Input, SectionHeader, SaveBar, Select, Switch, Textarea, toast, useRovingRadio } from '../ui'
 import { EmbedCard } from '../components/EmbedCard'
 import { ErrorBox, PageHeader } from './AdminShell'
 import type { EventType } from './types'
+import { useUnsavedGuard } from './unsaved'
 
 const origin = () => location.origin
 
@@ -160,12 +161,18 @@ export function TerminseiteEditor() {
   const [ev, setEv] = useState<typeof blank>(blank)
   const [slugTouched, setSlugTouched] = useState(!isNew)
   const [online, setOnline] = useState<EventType | null>(null)
+  const [preview, setPreview] = useState(false)
+  // Stand beim Laden bzw. Speichern als Text: Abweichung = ungespeicherte Änderungen
+  const [base, setBase] = useState(() => JSON.stringify(blank))
+  const dirty = JSON.stringify(ev) !== base
+  const guard = useUnsavedGuard(dirty)
   // Nur einmal aus den Serverdaten übernehmen, damit ein Neuladen im Hintergrund keine Eingaben überschreibt
   const loadedId = useRef<string | null>(null)
   useEffect(() => {
     if (q.data && loadedId.current !== q.data.id) {
       loadedId.current = q.data.id
       setEv(q.data)
+      setBase(JSON.stringify(q.data))
     }
   }, [q.data])
   const durationRoving = useRovingRadio(durations, ev.duration, (d) => set('duration', d))
@@ -185,6 +192,10 @@ export function TerminseiteEditor() {
       qc.invalidateQueries({ queryKey: ['event-types'] })
       qc.invalidateQueries({ queryKey: ['onboarding'] })
       qc.setQueryData(['event-type', saved.id], saved)
+      // Gespeicherten Stand übernehmen, sonst gilt das Formular noch als geändert
+      loadedId.current = saved.id
+      setEv(saved)
+      setBase(JSON.stringify(saved))
       if (first) setOnline(saved)
       else toast('Gespeichert')
       if (isNew) nav(`/admin/terminseiten/${saved.id}`, { replace: true })
@@ -198,11 +209,12 @@ export function TerminseiteEditor() {
 
   return (
     <>
-    <form onSubmit={(e) => { e.preventDefault(); save.mutate() }}>
+    <form id="ts-form" onSubmit={(e) => { e.preventDefault(); save.mutate() }}>
       <Link to="/admin/terminseiten" className="press -ml-2 mb-4 inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-sm text-muted hover:bg-surface-2 hover:text-fg"><ArrowLeft className="size-4" /> Terminseiten</Link>
       <PageHeader
         title={isNew ? 'Neue Terminseite' : ev.title || 'Terminseite'}
         actions={<>
+          <Button type="button" className="xl:hidden" onClick={() => setPreview(true)}><Eye /> Vorschau</Button>
           {!isNew && <CopyButton value={link} size="md" />}
           <Button type="submit" variant="primary" disabled={save.isPending}>{isNew ? 'Anlegen' : 'Speichern'}</Button>
         </>}
@@ -337,22 +349,35 @@ export function TerminseiteEditor() {
         <aside className="hidden xl:block">
           <div className="sticky top-10">
             <p className="mb-3 text-xs font-medium tracking-wide text-subtle uppercase">Vorschau</p>
-            <div className="rounded-2xl border border-line bg-surface p-5 shadow-card">
-              <span className="block h-1 w-10 rounded-full" style={{ background: `oklch(0.7 0.11 ${ev.color})` }} />
-              <p className="mt-4 font-display text-[20px] leading-snug text-balance">{ev.title || 'Titel deiner Terminseite'}</p>
-              <ul className="mt-4 flex flex-col gap-2 text-sm text-muted">
-                <li className="flex items-center gap-2"><Clock className="size-4" /> {fmtDuration(ev.duration)}</li>
-                <li className="flex items-center gap-2"><LocationIcon kind={loc.kind} className="size-4" /> {loc.label || locationOptions.find((l) => l.kind === loc.kind)?.short}</li>
-              </ul>
-              <p className="mt-4 line-clamp-4 text-sm whitespace-pre-line text-muted">{ev.description || 'Beschreibung …'}</p>
-              {!isNew && <a href={`/${me.handle}/${ev.slug}`} target="_blank" rel="noreferrer" className="press mt-5 flex h-10 items-center justify-center gap-2 rounded-[10px] bg-accent text-sm font-medium text-accent-fg">Seite öffnen <ExternalLink className="size-4" /></a>}
-            </div>
+            <PreviewCard ev={ev} handle={me.handle} isNew={isNew} />
           </div>
         </aside>
       </div>
+      <SaveBar show={dirty} pending={save.isPending} formId="ts-form" label={isNew ? 'Anlegen' : 'Speichern'} />
     </form>
     <OnlineDialog ev={online} handle={me.handle} onClose={() => setOnline(null)} />
+    <Dialog open={preview} onOpenChange={setPreview} title="Vorschau" description="So sieht deine Terminseite im Kopf der Buchungsseite aus.">
+      <PreviewCard ev={ev} handle={me.handle} isNew={isNew} />
+    </Dialog>
+    {guard.dialog}
     </>
+  )
+}
+
+/** Vorschau der Terminseite: neben dem Formular ab xl, darunter im Dialog „Vorschau“. */
+function PreviewCard({ ev, handle, isNew }: { ev: typeof blank; handle: string; isNew: boolean }) {
+  const loc = ev.location
+  return (
+      <div className="rounded-2xl border border-line bg-surface p-5 shadow-card">
+        <span className="block h-1 w-10 rounded-full" style={{ background: `oklch(0.7 0.11 ${ev.color})` }} />
+        <p className="mt-4 font-display text-[20px] leading-snug text-balance">{ev.title || 'Titel deiner Terminseite'}</p>
+        <ul className="mt-4 flex flex-col gap-2 text-sm text-muted">
+          <li className="flex items-center gap-2"><Clock className="size-4" /> {fmtDuration(ev.duration)}</li>
+          <li className="flex items-center gap-2"><LocationIcon kind={loc.kind} className="size-4" /> {loc.label || locationOptions.find((l) => l.kind === loc.kind)?.short}</li>
+        </ul>
+        <p className="mt-4 line-clamp-4 text-sm whitespace-pre-line text-muted">{ev.description || 'Beschreibung …'}</p>
+        {!isNew && <a href={`/${handle}/${ev.slug}`} target="_blank" rel="noreferrer" className="press mt-5 flex h-10 items-center justify-center gap-2 rounded-[10px] bg-accent pointer-coarse:h-11 text-sm font-medium text-accent-fg">Seite öffnen <ExternalLink className="size-4" /></a>}
+      </div>
   )
 }
 

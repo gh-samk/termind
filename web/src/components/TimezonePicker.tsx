@@ -1,6 +1,8 @@
 import { useMemo } from 'react'
 import { timezoneGroups, supportedTimezones } from '@shared/timezones'
+import type { Locale } from '@shared/types'
 import { browserTz } from '../lib/format'
+import { localizeTimezoneGroups } from '../lib/guest'
 import { Select } from '../ui'
 
 /**
@@ -9,8 +11,8 @@ import { Select } from '../ui'
  * Ein natives Auswahlfeld, damit Tastatur, Suche per Tippen und Mobilgeräte ohne Extra-Code funktionieren.
  * Verknüpfung mit <Field htmlFor=…> läuft über `id`, wie bei Select.
  */
-export function TimezonePicker({ value, onChange, id, className, 'aria-label': ariaLabel }: { value: string; onChange: (tz: string) => void; id?: string; className?: string; 'aria-label'?: string }) {
-  const groups = useMemo(() => timezoneGroups(supportedTimezones(), { recommended: browserTz(), current: value }), [value])
+export function TimezonePicker({ value, onChange, id, className, locale = 'de', 'aria-label': ariaLabel }: { value: string; onChange: (tz: string) => void; id?: string; className?: string; locale?: Locale; 'aria-label'?: string }) {
+  const groups = useMemo(() => localizeTimezoneGroups(timezoneGroups(supportedTimezones(), { recommended: browserTz(), current: value }), locale), [value, locale])
   return (
     <Select id={id} value={value} onChange={(e) => onChange(e.target.value)} className={className} aria-label={ariaLabel}>
       {groups.map((g) => (

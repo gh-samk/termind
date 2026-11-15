@@ -103,7 +103,8 @@ export function AdminShell() {
 
       <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-line bg-bg/85 px-4 backdrop-blur-md lg:hidden">
         <Logo />
-        <div className="flex gap-1">
+        <div className="flex items-center gap-1">
+          <a href={`/${user.handle}`} target="_blank" rel="noreferrer" aria-label="Meine Seite (öffnet in neuem Tab)" title="Meine Seite" className="press inline-flex size-11 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-fg [&_svg]:size-4"><ExternalLink aria-hidden /></a>
           <Button variant="ghost" size="icon" onClick={toggle} aria-label="Design wechseln">{theme === 'dark' ? <Sun /> : <Moon />}</Button>
           <Button variant="ghost" size="icon" onClick={logout} aria-label="Abmelden"><LogOut /></Button>
         </div>

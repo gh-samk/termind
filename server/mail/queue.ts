@@ -2,6 +2,7 @@ import { and, asc, eq, gt, inArray, lte } from 'drizzle-orm'
 import { db } from '../db/client'
 import { bookings, eventTypes, jobs, passwordResets, users } from '../db/schema'
 import { decrypt, encrypt, newId, nowIso, sha256 } from '../lib/util'
+import { createActionTokens } from '../services/actionTokens'
 import { syncBookingToCalendar } from '../services/calendars'
 import { deliverWebhook } from '../services/webhooks'
 import { getSetting } from '../services/settings'
@@ -59,7 +60,7 @@ async function processJob(job: typeof jobs.$inferSelect) {
     return sendMail(renderResetMail(user, link, Math.round((new Date(valid.expiresAt).getTime() - new Date(valid.createdAt).getTime()) / 60_000), await getSetting('branding')))
   }
   if (job.type !== 'booking-mail') throw new Error(`Unbekannter Auftrag: ${job.type}`)
-  const { bookingId, template, forStart } = job.payload as { bookingId: string; template: MailTemplate; forStart?: string }
+  const { bookingId, template, forStart, wasPending, oldStart, oldEnd } = job.payload as { bookingId: string; template: MailTemplate; forStart?: string; wasPending?: boolean; oldStart?: string; oldEnd?: string }
   const booking = await db.query.bookings.findFirst({ where: eq(bookings.id, bookingId) })
   if (!booking || booking.anonymizedAt) return // gelöscht oder anonymisiert: nichts mehr zu senden
   // Erinnerung nur, wenn der Termin noch steht und nicht verschoben wurde
@@ -70,7 +71,14 @@ async function processJob(job: typeof jobs.$inferSelect) {
   const event = await db.query.eventTypes.findFirst({ where: eq(eventTypes.id, booking.eventTypeId) })
   const host = await db.query.users.findFirst({ where: eq(users.id, booking.hostId) })
   if (!event || !host) return
-  const mail = renderMail(template, { booking, event, host, branding: await getSetting('branding'), texts: await getSetting('mailTexts') })
+  // Direkt-Knöpfe: Die Token entstehen erst jetzt beim Erzeugen der Mail und stehen nie (auch nicht verschlüsselt) in der Warteschlange.
+  // Bei einem neuen Versuch entstehen neue Token; alle Token einer Anfrage werden mit der ersten Entscheidung ungültig.
+  let actionLinks: { confirm: string; decline: string } | undefined
+  if (template === 'host.requested') {
+    const tokens = await createActionTokens(booking)
+    if (tokens) actionLinks = { confirm: `${config.publicUrl}/aktion/${tokens.confirm}`, decline: `${config.publicUrl}/aktion/${tokens.decline}` }
+  }
+  const mail = renderMail(template, { booking, event, host, branding: await getSetting('branding'), texts: await getSetting('mailTexts'), actionLinks, wasPending, previous: oldStart && oldEnd ? { startsAt: oldStart, endsAt: oldEnd } : undefined })
   await sendMail(mail)
 }
 

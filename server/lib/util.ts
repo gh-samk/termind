@@ -23,7 +23,7 @@ export function decrypt(payload: string): string {
 }
 
 /** Pfade, die nicht als persönlicher Link (Handle) vergeben werden dürfen. */
-export const RESERVED_HANDLES = new Set(['admin', 'login', 'setup', 'api', 'mcp', 'oauth', 'b', 'embed', 'assets', 'healthz', 'well-known', 'static', 'public', 'termind', 'passwort-neu'])
+export const RESERVED_HANDLES = new Set(['admin', 'login', 'setup', 'api', 'mcp', 'oauth', 'b', 'embed', 'assets', 'healthz', 'well-known', 'static', 'public', 'termind', 'passwort-neu', 'aktion'])
 
 export function slugify(s: string) {
   return s

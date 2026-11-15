@@ -74,6 +74,26 @@ export const passwordResets = sqliteTable(
   (t) => [index('password_resets_user_idx').on(t.userId)],
 )
 
+/**
+ * Einmal-Links „Bestätigen“ / „Ablehnen“ in der Anfrage-Mail an den Gastgeber.
+ * Gespeichert wird nur der SHA-256-Hash des Tokens. Der Link ändert nichts per GET, erst ein POST führt aus.
+ */
+export const actionTokens = sqliteTable(
+  'action_tokens',
+  {
+    id: id(), // SHA-256 des Tokens
+    bookingId: text('booking_id').notNull().references(() => bookings.id, { onDelete: 'cascade' }),
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    action: text('action', { enum: ['confirm', 'decline'] }).notNull(),
+    /** Änderungszähler der Buchung beim Anlegen: ändert sich der Termin, ist der Link ungültig */
+    bookingSequence: integer('booking_sequence').notNull(),
+    expiresAt: text('expires_at').notNull(),
+    usedAt: text('used_at'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('action_tokens_booking_idx').on(t.bookingId)],
+)
+
 /** Ersatzcodes für die Zwei-Faktor-Anmeldung. Gespeichert wird nur ein HMAC der Codes. */
 export const backupCodes = sqliteTable(
   'backup_codes',
@@ -182,6 +202,10 @@ export const bookings = sqliteTable(
     calendarRef: text('calendar_ref', { mode: 'json' }).$type<{ connectionId: string; objectUrl: string; etag?: string } | null>(),
     createdVia: text('created_via', { enum: ['web', 'mcp', 'admin', 'api'] }).notNull().default('web'),
     anonymizedAt: text('anonymized_at'),
+    /** false: vom Gastgeber still eingetragen, der Gast bekommt keine Mails und Erinnerungen (außer bei eigenen Aktionen) */
+    notifyGuest: integer('notify_guest', { mode: 'boolean' }).notNull().default(true),
+    /** Wie oft der Gast den Termin selbst verschoben hat (Grenze gegen Mail-Fluten) */
+    guestMoves: integer('guest_moves').notNull().default(0),
     createdAt: createdAt(),
     updatedAt: text('updated_at'),
   },
