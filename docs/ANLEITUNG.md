@@ -40,28 +40,42 @@ Caddy holt das HTTPS-Zertifikat automatisch bei Let's Encrypt.
 
 ## 2. Konto anlegen
 
-Damit niemand Fremdes eine frisch installierte Instanz übernimmt, geht die Ersteinrichtung nur mit einem einmaligen Link aus dem Log:
+Damit niemand Fremdes eine frisch installierte Instanz übernimmt, geht die Ersteinrichtung nur mit einem Einrichtungscode. Es gibt zwei Fundstellen, beide im Ordner mit der `docker-compose.yml`:
 
 ```bash
+# der ganze Einrichtungslink (steht im Log und wird dort alle 10 Minuten wiederholt, bis ein Konto existiert)
 docker compose logs termind | grep setup
+
+# oder nur der Code, direkt aus der Datei
+docker compose exec termind cat /data/setup-token
 ```
 
-Öffne den Link, lege Name, E-Mail und Passwort fest (mindestens 10 Zeichen) und gib der Instanz einen Namen. Er erscheint als Absender in Mails. Danach landest du im Admin-Bereich mit einer kurzen Liste „Erste Schritte“.
+Öffne den Link. Rufst du `/setup` ohne Link auf, zeigt termind ein Feld „Einrichtungscode einfügen“: Dort passt der Code oder der ganze Link. Ein falscher Code wird sofort gemeldet, bevor du etwas ausfüllst.
+
+Wer lieber einen eigenen Code vergibt, setzt in `.env` die Zeile `SETUP_TOKEN=…` (siehe `.env.example`).
+
+Lege dann Name, E-Mail und Passwort fest (mindestens 10 Zeichen), wähle deine Zeitzone und gib der Instanz einen Namen. Er erscheint als Absender in Mails. Danach landest du im Admin-Bereich mit einer Begrüßung samt Link zu deiner Terminseite und der Checkliste „Erste Schritte“. Sie hakt ab, was wirklich erledigt ist: Mail-Versand mit erfolgreicher Testmail, Verfügbarkeit gespeichert, erste Terminseite, Impressum und Datenschutz verlinkt, Testbuchung gemacht. Der Kalender ist freiwillig. Mit „Ausblenden“ räumst du die Liste weg, unter *Einstellungen → Profil* holst du sie zurück.
 
 ## 3. E-Mail-Versand einrichten
 
-*Einstellungen → E-Mail*. termind verschickt alle Mails über dein eigenes Postfach. Typische Werte:
+*Einstellungen → E-Mail*. termind verschickt alle Mails über dein eigenes Postfach.
 
-| Anbieter | Server | Port | Verschlüsselung |
-| --- | --- | --- | --- |
-| mailbox.org | smtp.mailbox.org | 587 | STARTTLS |
-| Hetzner (KonsoleH) | mail.your-server.de | 587 | STARTTLS |
-| Strato | smtp.strato.de | 465 | SSL/TLS |
-| IONOS | smtp.ionos.de | 587 | STARTTLS |
-| Google Workspace | smtp.gmail.com | 587 | STARTTLS (App-Passwort nötig) |
-| Microsoft 365 | smtp.office365.com | 587 | STARTTLS |
+Wähle bei **Mein Anbieter** deinen Anbieter: termind trägt Server, Port und Verschlüsselung für dich ein und zeigt einen Hinweis, z. B. ob ein App-Passwort nötig ist. Der Benutzername ist meist deine volle E-Mail-Adresse. Er und die Absender-Adresse werden mit deiner Anmelde-Adresse vorbelegt. Wechselst du die Verschlüsselung, passt termind den Port an (SSL/TLS → 465, STARTTLS → 587), außer du hast einen eigenen Port eingetragen.
 
-Mit „Testmail an mich“ prüfst du die Verbindung. Das Passwort wird verschlüsselt gespeichert und nie wieder angezeigt.
+| Anbieter | Server | Port | Verschlüsselung | Hinweis |
+| --- | --- | --- | --- | --- |
+| mailbox.org | smtp.mailbox.org | 465 | SSL/TLS | Mit Zwei-Faktor-Anmeldung ein eigenes Passwort für Programme anlegen |
+| IONOS | smtp.ionos.de | 587 | STARTTLS | |
+| Strato | smtp.strato.de | 465 | SSL/TLS | |
+| Hetzner (KonsoleH / Webhosting) | mail.your-server.de | 587 | STARTTLS | |
+| All-Inkl | individuell | 587 | STARTTLS | Server steht im Kundenbereich (KAS) beim E-Mail-Konto |
+| GMX | mail.gmx.net | 587 | STARTTLS | Abruf per POP3/IMAP und SMTP erst in GMX erlauben |
+| WEB.DE | smtp.web.de | 587 | STARTTLS | Abruf per POP3/IMAP und SMTP erst in WEB.DE erlauben |
+| T-Online | securesmtp.t-online.de | 587 | STARTTLS | Eigenes E-Mail-Passwort im Kundencenter einrichten |
+| Gmail / Google Workspace | smtp.gmail.com | 587 | STARTTLS | App-Passwort nötig |
+| Microsoft 365 / Outlook | smtp.office365.com | 587 | STARTTLS | SMTP-Versand fürs Postfach muss erlaubt sein, ggf. App-Passwort |
+
+Mit **Verbindung testen** prüfst du Server, Port und Anmeldung mit den Werten im Formular, bevor du speicherst (es wird keine Mail verschickt; höchstens 10 Tests in 10 Minuten). Mit **Testmail an mich** schickst du nach dem Speichern eine echte Mail. Klappt etwas nicht, erklärt termind es in einem Satz, zum Beispiel „Benutzername oder Passwort falsch“, „Server nicht erreichbar“ oder „Verschlüsselung passt nicht zum Port“. Das Passwort wird verschlüsselt gespeichert und nie wieder angezeigt. Lässt du das Feld später leer, bleibt das gespeicherte Passwort nur bei gleichem Server, Port, gleicher Verschlüsselung und gleichem Benutzer erhalten, sonst fragt termind danach. Verschlüsselung „unverschlüsselt“ gibt es nur für eigene Server im lokalen Netz.
 
 **Mail-Texte:** Unter *Einstellungen → E-Mail → Texte der Mails* formulierst du Betreff und Einleitung jeder Mail auf Deutsch und Englisch, mit Live-Vorschau. Platzhalter: `{vorname}`, `{gast}`, `{gastgeber}`, `{termin}`, `{datum}`, `{uhrzeit}`, `{ort}`.
 
@@ -70,6 +84,8 @@ Damit Mails nicht im Spam landen, sollten SPF, DKIM und DMARC deiner Absender-Do
 ## 4. Verfügbarkeit festlegen
 
 *Verfügbarkeit*: Pro Wochentag legst du ein oder mehrere Zeitfenster fest (z. B. 9–12:30 und 14–17 Uhr). Mit dem Kopier-Symbol überträgst du einen Tag auf alle aktiven Tage.
+
+**Zeitzone:** Für dich gibt es eine Zeitzone. Du wählst sie bei der Einrichtung, in *Einstellungen → Profil* oder hier, und sie gilt für Verfügbarkeit, Terminliste und Profil. Wer eine ändert, stellt die andere mit um (solange du nur einen Verfügbarkeitsplan hast). Deine Zeiten, z. B. 9–17 Uhr, gelten danach in der neuen Zeitzone; bestehende Termine bleiben, wie sie sind. Gäste sehen die Zeiten in ihrer eigenen Zeitzone.
 
 **Ausnahmen** sind Urlaub, Feiertage oder Tage mit anderen Zeiten. Bestehende Termine und belegte Zeiten aus verbundenen Kalendern spart termind automatisch aus.
 
@@ -129,7 +145,7 @@ Im Editor jeder Terminseite unter *Auf deiner Webseite einbetten* kopierst du de
 <div data-termind="lena" data-mode="floating" data-label="Termin buchen"></div>
 ```
 
-In WordPress fügst du den Code mit einem Block „Individuelles HTML“ ein.
+Wohin mit dem Code? In WordPress fügst du ihn mit einem Block „Individuelles HTML“ ein, bei Wix über „Einbetten → Code einbetten“, bei Jimdo mit einem „Widget/HTML“-Element. Der Code für deine ganze Profilseite (alle Terminseiten zur Auswahl, `data-termind="lena"`) steht unter *Einstellungen → Profil*, der für eine einzelne Terminseite in deren Einstellungen. Nach der allerersten Terminseite zeigt termind dir den Link und regt eine Testbuchung an.
 
 ## 8. Mit einer KI verwalten
 
@@ -168,7 +184,8 @@ termind setzt für Gäste keine Cookies und lädt nichts von fremden Servern. Sc
 *Einstellungen → Anmeldung & Sicherheit*:
 
 - **Passkeys** für die Anmeldung per Face ID, Touch ID oder Windows Hello (nur unter HTTPS)
-- **Zwei-Faktor-Anmeldung** mit einer Authenticator-App
+- **Zwei-Faktor-Anmeldung** mit einer Authenticator-App. Beim Einschalten erzeugt termind 10 **Ersatzcodes** (einmalig sichtbar, als Datei oder zum Kopieren). Mit einem davon meldest du dich einmal ohne App an: Im Code-Schritt auf „Ersatzcode verwenden“ klicken. Du siehst, wie viele noch übrig sind, und kannst nach Eingabe deines Passworts neue erzeugen (die alten verfallen)
+- **Passwort vergessen?** Auf der Anmeldeseite schickt termind einen Link zum Festlegen eines neuen Passworts (30 Minuten gültig, nur einmal verwendbar). Danach werden alle Geräte abgemeldet. Die Zwei-Faktor-Anmeldung bleibt bestehen. Das setzt voraus, dass der Mail-Versand eingerichtet ist. Pro E-Mail-Adresse sind höchstens 3 Anfragen pro Stunde möglich, pro Adresse des Besuchers 10 in 15 Minuten. Die Antwort ist immer dieselbe, egal ob es das Konto gibt
 - Beim Ändern des Passworts werden alle anderen Sitzungen beendet.
 
 ## 12. Backups und Updates
@@ -213,4 +230,26 @@ Jede Instanz hat ihre eigene Datenbank, ein Speicher-, CPU- und Prozesslimit, ei
 | Kalender „getrennt“ | App-Passwort erneuern: *Einstellungen → Kalender → Neu anmelden* |
 | Passkey lässt sich nicht anlegen | termind muss über HTTPS laufen, `PUBLIC_URL` muss stimmen |
 | Der Connector im KI-Assistenten schlägt fehl | `PUBLIC_URL` muss die echte https-Adresse sein, die von außen erreichbar ist |
-| Falsche Uhrzeiten | Zeitzone unter *Verfügbarkeit* prüfen |
+| Falsche Uhrzeiten | Zeitzone unter *Einstellungen → Profil* oder *Verfügbarkeit* prüfen |
+| Passwort vergessen | Auf der Anmeldeseite „Passwort vergessen?“ (braucht eingerichteten Mail-Versand), sonst siehe unten |
+| Ausgesperrt | siehe „Ausgesperrt“ unten |
+| „Dieser Mailserver liegt in einem internen Netz“ | termind verbindet sich aus Sicherheitsgründen nicht mit Servern im eigenen Netz (private, Loopback- und Link-Local-Adressen). Betreibst du ein lokales Relay, setze `ALLOW_PRIVATE_HOSTS=true` in der `.env` und in `docker-compose.yml` unter `environment`. Das gilt auch für Kalender im lokalen Netz |
+| Alle Besucher teilen sich ein Versuchslimit („Zu viele Versuche“) | Läuft termind hinter einem Reverse Proxy (z. B. Caddy), muss `TRUST_PROXY=true` gesetzt sein, sonst sieht termind nur die Adresse des Proxys. Im mitgelieferten `docker-compose.yml` ist das gesetzt |
+
+### Ausgesperrt
+
+**Passwort vergessen, Mail-Versand nicht eingerichtet:** Auf dem Server erzeugst du einen Link zum Festlegen eines neuen Passworts. Es wird kein Passwort im Terminal eingegeben oder angezeigt.
+
+```bash
+docker compose exec termind node server/index.js reset-password du@example.de
+```
+
+Der Befehl beendet alle Sitzungen dieses Kontos und gibt einen Link aus (30 Minuten gültig, nur einmal verwendbar). Öffne ihn im Browser und lege das neue Passwort fest. Die Adresse im Link kommt aus `PUBLIC_URL`.
+
+**Handy verloren und keine Ersatzcodes mehr:** Schalte zusätzlich die Zwei-Faktor-Anmeldung aus (Passkeys bleiben bestehen). Danach kannst du sie nach der Anmeldung neu einrichten und bekommst neue Ersatzcodes.
+
+```bash
+docker compose exec termind node server/index.js reset-password du@example.de --disable-2fa
+```
+
+Ohne Docker (Entwicklung): `npx tsx server/index.ts reset-password du@example.de`.

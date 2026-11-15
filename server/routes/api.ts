@@ -1,10 +1,13 @@
 import { v } from '../lib/validate'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { brandingSchema, cancelSchema, exceptionSchema, profileSchema, rescheduleSchema, scheduleUpdateSchema, smtpSchema } from '../../shared/schemas'
+import { brandingSchema, cancelSchema, exceptionSchema, profileSchema, rescheduleSchema, scheduleUpdateSchema, smtpCheckSchema, smtpSchema } from '../../shared/schemas'
 import { requireOwner } from '../lib/actor'
 import { mailQueueStatus, retryFailedMails } from '../mail/queue'
-import { sendTestMail } from '../mail/transport'
+import { checkSmtpConnection, sendTestMail } from '../mail/transport'
+import { hit } from '../lib/rateLimit'
+import { AppError } from '../lib/errors'
+import { getOnboarding, setOnboardingHidden } from '../services/onboarding'
 import { listAudit } from '../services/audit'
 import * as calendars from '../services/calendars'
 import * as oauth from '../services/oauth'
@@ -74,7 +77,7 @@ export const apiRoutes = new Hono<Env>()
   /* Einstellungen */
   .get('/settings', async (c) => {
     requireOwner(c.get('actor'))
-    return c.json({ branding: await getSetting('branding'), smtp: publicSmtp(await getSetting('smtp')), mail: await mailQueueStatus() })
+    return c.json({ branding: await getSetting('branding'), smtp: publicSmtp(await getSetting('smtp')), mail: await mailQueueStatus(), lastSmtpOk: (await getSetting('lastSmtpOk')) || null })
   })
   .put('/settings/branding', v('json', brandingSchema), async (c) => c.json(await updateBranding(c.get('actor'), c.req.valid('json'))))
   .put('/settings/smtp', v('json', smtpSchema), async (c) => c.json(await updateSmtp(c.get('actor'), c.req.valid('json'))))
@@ -83,11 +86,22 @@ export const apiRoutes = new Hono<Env>()
     await sendTestMail(c.req.valid('json').to)
     return c.json({ ok: true })
   })
+  /* Verbindung mit den Werten aus dem Formular prüfen (nichts wird gespeichert, keine Mail verschickt) */
+  .post('/settings/smtp/check', v('json', smtpCheckSchema), async (c) => {
+    const a = requireOwner(c.get('actor'))
+    if (!hit(`smtp-check:${a.userId}`, 10, 10 * 60_000)) throw new AppError('rate_limited', 'Zu viele Tests. Bitte warte ein paar Minuten.')
+    await checkSmtpConnection(c.req.valid('json'))
+    return c.json({ ok: true })
+  })
   .post('/settings/mail/retry', async (c) => {
     requireOwner(c.get('actor'))
     await retryFailedMails()
     return c.json({ ok: true })
   })
+
+  /* Checkliste „Erste Schritte“ */
+  .get('/onboarding', async (c) => c.json(await getOnboarding(c.get('actor'))))
+  .put('/onboarding', v('json', z.object({ hidden: z.boolean().optional(), doneDismissed: z.boolean().optional() })), async (c) => c.json(await setOnboardingHidden(c.get('actor'), c.req.valid('json'))))
 
   /* Mail-Texte */
   .get('/settings/mail-texts', async (c) => c.json(await getMailTexts(c.get('actor'))))
@@ -145,10 +159,9 @@ export const apiRoutes = new Hono<Env>()
     return c.json({ ok: true })
   })
   .post('/security/totp/start', async (c) => c.json(await auth.startTotpSetup(c.get('actor'))))
-  .post('/security/totp/confirm', v('json', z.object({ code: z.string() })), async (c) => {
-    await auth.confirmTotpSetup(c.get('actor'), c.req.valid('json').code)
-    return c.json({ ok: true })
-  })
+  .post('/security/totp/confirm', v('json', z.object({ code: z.string() })), async (c) => c.json({ ok: true, ...(await auth.confirmTotpSetup(c.get('actor'), c.req.valid('json').code)) }))
+  .get('/security/backup-codes', async (c) => c.json(await auth.backupCodeStatus(c.get('actor'))))
+  .post('/security/backup-codes', v('json', z.object({ password: z.string().max(200) })), async (c) => c.json(await auth.regenerateBackupCodes(c.get('actor'), c.req.valid('json').password)))
   .post('/security/totp/disable', v('json', z.object({ password: z.string() })), async (c) => {
     await auth.disableTotp(c.get('actor'), c.req.valid('json').password)
     return c.json({ ok: true })

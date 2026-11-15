@@ -115,6 +115,17 @@ export const smtpSchema = z.object({
   replyTo: z.email().or(z.literal('')).default(''),
 })
 
+/** „Verbindung testen“ mit den Werten aus dem Formular, ohne zu speichern */
+export const smtpCheckSchema = smtpSchema.pick({ host: true, port: true, security: true, user: true, password: true })
+
+/** Mindestlänge für Passwörter (Einrichtung, Ändern, Zurücksetzen) */
+export const PASSWORD_MIN = 10
+export const PASSWORD_MAX = 200
+export const newPasswordSchema = z.string().min(PASSWORD_MIN, `Mindestens ${PASSWORD_MIN} Zeichen`).max(PASSWORD_MAX, 'Höchstens 200 Zeichen')
+
+export const passwordResetRequestSchema = z.object({ email: z.string().max(254) })
+export const passwordResetConfirmSchema = z.object({ token: z.string().min(20).max(200), password: newPasswordSchema })
+
 const httpUrl = z.url({ protocol: /^https?$/ }).max(500)
 
 export const brandingSchema = z.object({
@@ -136,7 +147,7 @@ export const profileSchema = z.object({
 export const setupSchema = z.object({
   name: z.string().trim().min(1).max(120),
   email: z.email(),
-  password: z.string().min(10, 'Mindestens 10 Zeichen').max(200),
+  password: newPasswordSchema,
   timezone: z.string().min(1),
   instanceName: z.string().trim().min(1).max(80),
 })

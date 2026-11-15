@@ -50,4 +50,6 @@ export interface SettingsData {
   branding: Branding
   smtp: { host: string; port: number; security: 'starttls' | 'tls' | 'none'; user: string; fromName: string; fromEmail: string; replyTo: string; hasPassword: boolean } | null
   mail: { queued: number; failed: number; lastError: string | null }
+  /** Zeitpunkt der letzten erfolgreichen Testmail */
+  lastSmtpOk: string | null
 }

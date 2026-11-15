@@ -1,5 +1,14 @@
 # Changelog
 
+## Unveröffentlicht
+
+- Einrichtung: Anbieter-Vorlagen für den Mail-Versand, „Verbindung testen“ vor dem Speichern, verständliche Fehlermeldungen
+- Einrichtungscode einfügen und früh prüfen, Link wird bis zur Einrichtung alle 10 Minuten neu ins Log geschrieben
+- Checkliste „Erste Schritte“ mit echten Kriterien, Begrüßung, Dialog nach der ersten Terminseite, Einbetten auch für die Profilseite
+- Ausgesperrt-Schutz: „Passwort vergessen?“ per Mail-Link, Ersatzcodes für die Zwei-Faktor-Anmeldung, Notfallbefehl `reset-password`
+- Hinweis für Betreiber mit lokalem Mail-Relay: Mailserver in privaten Netzen (auch 127.0.0.1) werden jetzt wie Kalender-Adressen abgelehnt, beim Speichern, Testen und Versenden. Mit `ALLOW_PRIVATE_HOSTS=true` bleibt es erlaubt. Das gespeicherte SMTP-Passwort gilt nur noch für denselben Server und Benutzer
+- Zeitzonen-Auswahl mit lesbaren Namen; Profil und Verfügbarkeit teilen eine Zeitzone
+
 ## 0.1.0
 
 Erste öffentliche Version.

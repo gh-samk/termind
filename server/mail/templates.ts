@@ -233,3 +233,29 @@ ${rows.map(([k, v]) => `<tr><td style="padding:4px 18px"><table role="presentati
 
   return { subject, html: body, text, ics, to: toGuest ? { name: b.guestName, email: b.guestEmail } : { name: host.name, email: host.email } }
 }
+
+/** Mail „Passwort zurücksetzen“. Der Link ist 30 Minuten gültig und nur einmal verwendbar. */
+export function renderResetMail(user: { name: string; email: string }, link: string, minutes: number, branding: Branding) {
+  const first = user.name.split(' ')[0] || user.name
+  const subject = `Passwort zurücksetzen für ${branding.instanceName}`
+  const accent = oklchToHex(0.52, 0.1, branding.accentHue)
+  const esc = (x: string) => x.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  const lines = [
+    `Du oder jemand anderes hat für dein Konto bei ${branding.instanceName} ein neues Passwort angefordert.`,
+    `Der Link ist ${minutes} Minuten gültig und lässt sich nur einmal verwenden. Danach musst du dich überall neu anmelden.`,
+  ]
+  const hint = 'Das warst du nicht? Dann ignoriere diese Mail. Dein Passwort bleibt unverändert.'
+  const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${esc(subject)}</title></head>
+<body style="margin:0;padding:0;background:#f5f3ee;font-family:Roboto,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;color:#26231f">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f3ee;padding:32px 12px"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:16px;border:1px solid #e8e4dc">
+<tr><td style="padding:28px">
+<div style="width:32px;height:4px;border-radius:4px;background:${accent}"></div>
+<p style="margin:20px 0 0;font-size:15px;line-height:1.55">Hallo ${esc(first)},</p>
+${lines.map((l) => `<p style="margin:8px 0 0;font-size:15px;line-height:1.55">${esc(l)}</p>`).join('')}
+<p style="margin:20px 0 0"><a href="${esc(link)}" style="display:inline-block;padding:11px 18px;border-radius:10px;background:${accent};color:#ffffff;font-size:14px;font-weight:600;text-decoration:none">Neues Passwort festlegen</a></p>
+<p style="margin:20px 0 0;font-size:13px;line-height:1.5;color:#6f695f">${esc(hint)}</p>
+</td></tr></table></td></tr></table></body></html>`
+  const text = [`Hallo ${first},`, '', ...lines, '', `Neues Passwort festlegen: ${link}`, '', hint].join('\n')
+  return { subject, html, text, ics: null, to: { name: user.name, email: user.email } }
+}

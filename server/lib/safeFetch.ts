@@ -9,7 +9,7 @@ import { invalid } from './errors'
  * (eigene DNS-Auflösung im Agent), damit DNS-Rebinding nicht hilft.
  * Self-Hoster mit Nextcloud im LAN setzen ALLOW_PRIVATE_HOSTS=true (gilt nicht für anonyme Abrufe).
  */
-const allowPrivateEnv = () => process.env.ALLOW_PRIVATE_HOSTS === 'true'
+export const allowPrivateEnv = () => process.env.ALLOW_PRIVATE_HOSTS === 'true'
 
 const blocked = new BlockList()
 for (const [net, bits] of [

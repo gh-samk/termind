@@ -50,9 +50,11 @@ try {
  * SETUP_TOKEN setzen oder den automatisch erzeugten Link aus dem Log verwenden.
  */
 function setupToken() {
-  if (process.env.SETUP_TOKEN) return process.env.SETUP_TOKEN
+  const fromEnv = process.env.SETUP_TOKEN?.trim()
+  if (fromEnv) return fromEnv
   const file = join(dataDir, 'setup-token')
-  if (!existsSync(file)) writeFileSync(file, randomBytes(18).toString('base64url'), { mode: 0o600 })
+  // Fehlende oder leere Datei: neuen Code erzeugen (ein leerer Code darf nie gelten)
+  if (!existsSync(file) || readFileSync(file, 'utf8').trim() === '') writeFileSync(file, randomBytes(18).toString('base64url'), { mode: 0o600 })
   try {
     chmodSync(file, 0o600)
   } catch {

@@ -10,7 +10,8 @@ import { api, errorMessage } from '../lib/api'
 import { cn } from '../lib/cn'
 import { ACCENT_HUES } from '../lib/colors'
 import { fmtDuration } from '../lib/format'
-import { Badge, Button, Card, ConfirmDialog, CopyButton, Field, Input, SectionHeader, Segmented, Select, Switch, Textarea, toast, useRovingRadio } from '../ui'
+import { Badge, Button, Card, ConfirmDialog, CopyButton, Dialog, Field, Input, SectionHeader, Select, Switch, Textarea, toast, useRovingRadio } from '../ui'
+import { EmbedCard } from '../components/EmbedCard'
 import { ErrorBox, PageHeader } from './AdminShell'
 import type { EventType } from './types'
 
@@ -158,6 +159,7 @@ export function TerminseiteEditor() {
   const q = useQuery({ queryKey: ['event-type', id], queryFn: () => api<EventType>(`/api/event-types/${id}`), enabled: !isNew })
   const [ev, setEv] = useState<typeof blank>(blank)
   const [slugTouched, setSlugTouched] = useState(!isNew)
+  const [online, setOnline] = useState<EventType | null>(null)
   // Nur einmal aus den Serverdaten übernehmen, damit ein Neuladen im Hintergrund keine Eingaben überschreibt
   const loadedId = useRef<string | null>(null)
   useEffect(() => {
@@ -171,15 +173,20 @@ export function TerminseiteEditor() {
   const set = <K extends keyof typeof blank>(k: K, v: (typeof blank)[K]) => setEv((e) => ({ ...e, [k]: v }))
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const { scheduleId, ...rest } = ev as EventType
       const body = { ...rest, scheduleId: scheduleId ?? undefined, slug: slugify(ev.slug ?? '') || undefined }
-      return isNew ? api<EventType>('/api/event-types', { body }) : api<EventType>(`/api/event-types/${id}`, { method: 'PATCH', body })
+      if (!isNew) return { saved: await api<EventType>(`/api/event-types/${id}`, { method: 'PATCH', body }), first: false }
+      // Ist das die allererste Terminseite? Dann gibt es danach einen Dialog statt nur einer Meldung.
+      const had = (await api<EventType[]>('/api/event-types')).length
+      return { saved: await api<EventType>('/api/event-types', { body }), first: had === 0 }
     },
-    onSuccess: (saved) => {
+    onSuccess: ({ saved, first }) => {
       qc.invalidateQueries({ queryKey: ['event-types'] })
+      qc.invalidateQueries({ queryKey: ['onboarding'] })
       qc.setQueryData(['event-type', saved.id], saved)
-      toast('Gespeichert')
+      if (first) setOnline(saved)
+      else toast('Gespeichert')
       if (isNew) nav(`/admin/terminseiten/${saved.id}`, { replace: true })
     },
   })
@@ -190,6 +197,7 @@ export function TerminseiteEditor() {
   const link = `${origin()}/${me.handle}/${ev.slug || slugify(ev.title) || '…'}`
 
   return (
+    <>
     <form onSubmit={(e) => { e.preventDefault(); save.mutate() }}>
       <Link to="/admin/terminseiten" className="press -ml-2 mb-4 inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-sm text-muted hover:bg-surface-2 hover:text-fg"><ArrowLeft className="size-4" /> Terminseiten</Link>
       <PageHeader
@@ -343,6 +351,8 @@ export function TerminseiteEditor() {
         </aside>
       </div>
     </form>
+    <OnlineDialog ev={online} handle={me.handle} onClose={() => setOnline(null)} />
+    </>
   )
 }
 
@@ -388,27 +398,32 @@ function FieldsEditor({ fields, onChange }: { fields: FormField[]; onChange: (f:
   )
 }
 
-type EmbedMode = 'inline' | 'popup' | 'floating'
-
-function EmbedCard({ path }: { path: string }) {
-  const [mode, setMode] = useState<EmbedMode>('inline')
-  const src = `${origin()}/embed.js`
-  const snippet = {
-    inline: `<script src="${src}" defer></script>\n<div data-termind="${path}"></div>`,
-    popup: `<script src="${src}" defer></script>\n<button data-termind="${path}" data-mode="popup">Termin buchen</button>`,
-    floating: `<script src="${src}" defer></script>\n<div data-termind="${path}" data-mode="floating" data-label="Termin buchen"></div>`,
-  }[mode]
+/** Nach der allerersten Terminseite: Link, Kopieren, Ansehen und der Anstoß zur Testbuchung. */
+function OnlineDialog({ ev, handle, onClose }: { ev: EventType | null; handle: string; onClose: () => void }) {
+  const url = ev ? `${origin()}/${handle}/${ev.slug}` : ''
+  const onboarding = useQuery({ queryKey: ['onboarding'], queryFn: () => api<{ steps: { id: string; done: boolean }[] }>('/api/onboarding'), enabled: !!ev })
+  const mailMissing = onboarding.data?.steps.find((s) => s.id === 'mail')?.done === false
   return (
-    <Card className="p-6">
-      <SectionHeader title="Auf deiner Webseite einbetten" description="Code in deine Seite einfügen, fertig. Funktioniert mit WordPress, Webflow, Wix und jeder anderen Seite." />
-      <div className="mt-5">
-        <Segmented label="Art der Einbettung" size="sm" value={mode} onChange={setMode} options={[{ value: 'inline', label: 'Im Text' }, { value: 'popup', label: 'Als Button' }, { value: 'floating', label: 'Schwebend' }]} />
+    <Dialog
+      open={!!ev}
+      onOpenChange={(o) => !o && onClose()}
+      title="Deine Terminseite ist online"
+      description="Ab jetzt können Kunden über diesen Link bei dir buchen."
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Schließen</Button>
+          <a href={url} target="_blank" rel="noreferrer" className="press inline-flex h-10 items-center justify-center gap-2 rounded-[10px] bg-accent px-4 text-sm font-medium text-accent-fg shadow-xs hover:bg-accent-hover"><ExternalLink className="size-4" /> Testbuchung machen</a>
+        </>
+      }
+    >
+      <code className="block rounded-[10px] border border-line bg-sunken px-3 py-2.5 font-mono text-[13px] break-all">{url}</code>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <CopyButton value={url} label="Kopieren" size="md" />
+        <a href={url} target="_blank" rel="noreferrer" aria-label="Seite ansehen" className="press flex size-10 items-center justify-center rounded-[10px] border border-line bg-surface text-muted shadow-xs hover:border-line-strong hover:text-fg"><ExternalLink className="size-4" /></a>
       </div>
-      <p className="mt-3 text-[13px] text-muted">
-        {mode === 'inline' ? 'Der Kalender erscheint direkt auf der Seite, die Höhe passt sich an.' : mode === 'popup' ? 'Ein Klick auf deinen Button öffnet den Kalender als Fenster.' : 'Ein Button schwebt unten rechts auf jeder Seite.'}
-      </p>
-      <pre className="mt-3 overflow-x-auto rounded-xl bg-sunken p-4 font-mono text-[12.5px] leading-relaxed text-fg ring-1 ring-line ring-inset">{snippet}</pre>
-      <div className="mt-3"><CopyButton value={snippet} label="Code kopieren" /></div>
-    </Card>
+      <p className="mt-4 text-sm text-muted">Mach am besten gleich eine Testbuchung, mit einer zweiten E-Mail-Adresse von dir. So siehst du die Seite und die Mails mit den Augen deiner Kunden. Den Termin kannst du danach unter „Termine“ absagen.</p>
+      {mailMissing && <p className="mt-3 rounded-xl border border-warn-line bg-warn-soft px-4 py-3 text-sm text-warn-fg">Der E-Mail-Versand ist noch nicht eingerichtet, Bestätigungen kommen so nicht an. <Link to="/admin/einstellungen/email" onClick={onClose} className="font-medium underline underline-offset-2">Jetzt einrichten</Link></p>}
+      <p className="mt-3 text-sm text-muted">Den Code zum Einbetten auf deiner Webseite findest du unten auf dieser Seite.</p>
+    </Dialog>
   )
 }

@@ -1,12 +1,13 @@
 import { and, asc, eq, gt, inArray, lte } from 'drizzle-orm'
 import { db } from '../db/client'
-import { bookings, eventTypes, jobs, users } from '../db/schema'
-import { newId, nowIso } from '../lib/util'
+import { bookings, eventTypes, jobs, passwordResets, users } from '../db/schema'
+import { decrypt, encrypt, newId, nowIso, sha256 } from '../lib/util'
 import { syncBookingToCalendar } from '../services/calendars'
 import { deliverWebhook } from '../services/webhooks'
 import { getSetting } from '../services/settings'
-import { type MailTemplate, renderMail } from './templates'
-import { sendMail } from './transport'
+import { type MailTemplate, renderMail, renderResetMail } from './templates'
+import { explainSmtp, logSmtpError, sendMail } from './transport'
+import { config } from '../config'
 
 const MAX_ATTEMPTS = 8
 
@@ -16,6 +17,16 @@ export async function enqueueBookingMail(bookingId: string, template: MailTempla
     .values({ id: newId(), type: 'booking-mail', payload: { bookingId, template, ...extra }, runAt: runAt.toISOString(), dedupeKey })
     .onConflictDoNothing({ target: jobs.dedupeKey })
 }
+
+/**
+ * Mail „Passwort zurücksetzen“. Der Token liegt nur verschlüsselt im Auftrag (nie im Klartext in der Datenbank)
+ * und wird nach dem Versand entfernt.
+ */
+export async function enqueuePasswordResetMail(userId: string, token: string) {
+  await db.insert(jobs).values({ id: newId(), type: 'password-reset', payload: { userId, tokenEnc: encrypt(token) }, runAt: nowIso() })
+}
+
+const MAIL_JOBS = new Set(['booking-mail', 'password-reset'])
 
 /** Kalendereintrag der Buchung im CalDAV-Kalender des Gastgebers aktualisieren. */
 export async function enqueueCalendarSync(bookingId: string) {
@@ -36,6 +47,17 @@ export async function scheduleReminders(booking: { id: string; startsAt: string;
 async function processJob(job: typeof jobs.$inferSelect) {
   if (job.type === 'calendar-booking') return syncBookingToCalendar((job.payload as { bookingId: string }).bookingId)
   if (job.type === 'webhook') return void (await deliverWebhook(job.payload as Parameters<typeof deliverWebhook>[0], job.attempts + 1))
+  if (job.type === 'password-reset') {
+    const { userId, tokenEnc } = job.payload as { userId: string; tokenEnc: string }
+    const token = decrypt(tokenEnc)
+    // Nur senden, solange der Link noch einlösbar ist
+    const valid = await db.query.passwordResets.findFirst({ where: eq(passwordResets.id, sha256(token)) })
+    if (!valid || valid.usedAt || valid.expiresAt < nowIso()) return
+    const user = await db.query.users.findFirst({ where: eq(users.id, userId) })
+    if (!user) return
+    const link = `${config.publicUrl}/passwort-neu?token=${token}`
+    return sendMail(renderResetMail(user, link, Math.round((new Date(valid.expiresAt).getTime() - new Date(valid.createdAt).getTime()) / 60_000), await getSetting('branding')))
+  }
   if (job.type !== 'booking-mail') throw new Error(`Unbekannter Auftrag: ${job.type}`)
   const { bookingId, template, forStart } = job.payload as { bookingId: string; template: MailTemplate; forStart?: string }
   const booking = await db.query.bookings.findFirst({ where: eq(bookings.id, bookingId) })
@@ -58,15 +80,21 @@ async function runJob(job: typeof jobs.$inferSelect) {
   if (claimed.length === 0) return
   try {
     await processJob(job)
-    await db.update(jobs).set({ status: 'done', attempts: job.attempts + 1, lastError: null }).where(eq(jobs.id, job.id))
+    await db.update(jobs).set({ status: 'done', attempts: job.attempts + 1, lastError: null, ...(job.type === 'password-reset' ? { payload: {} } : {}) }).where(eq(jobs.id, job.id))
   } catch (err) {
     const attempts = job.attempts + 1
-    const msg = err instanceof Error ? err.message : String(err)
-    const failed = attempts >= MAX_ATTEMPTS
+    // Mails: verständliche Erklärung für die Oberfläche, der Rohfehler nur ins Server-Log
+    const isMail = MAIL_JOBS.has(job.type)
+    const msg = isMail ? explainSmtp(err) : err instanceof Error ? err.message : String(err)
+    const failed = attempts >= MAX_ATTEMPTS || (job.type === 'password-reset' && attempts >= 3)
     // Exponentielles Warten: 1, 2, 4 … Minuten
     const next = new Date(Date.now() + 2 ** (attempts - 1) * 60_000).toISOString()
-    await db.update(jobs).set({ status: failed ? 'failed' : 'queued', attempts, lastError: msg.slice(0, 500), runAt: next }).where(eq(jobs.id, job.id))
-    console.warn(`[warteschlange] ${job.type} ${failed ? 'endgültig fehlgeschlagen' : 'Fehler, neuer Versuch später'}: ${msg}`)
+    await db
+      .update(jobs)
+      .set({ status: failed ? 'failed' : 'queued', attempts, lastError: msg.slice(0, 500), runAt: next, ...(failed && job.type === 'password-reset' ? { payload: {} } : {}) })
+      .where(eq(jobs.id, job.id))
+    if (isMail) logSmtpError(`${job.type} ${failed ? 'endgültig fehlgeschlagen' : 'Fehler, neuer Versuch später'}`, err)
+    else console.warn(`[warteschlange] ${job.type} ${failed ? 'endgültig fehlgeschlagen' : 'Fehler, neuer Versuch später'}: ${msg}`)
   }
 }
 
@@ -75,7 +103,7 @@ async function runJob(job: typeof jobs.$inferSelect) {
  * So kann ein langsamer Webhook-Empfänger keine Bestätigungsmail aufhalten.
  */
 const lanes = {
-  mail: { types: ['booking-mail', 'calendar-booking'], parallel: 1, running: false },
+  mail: { types: ['booking-mail', 'calendar-booking', 'password-reset'], parallel: 1, running: false },
   webhook: { types: ['webhook'], parallel: 4, running: false },
 }
 

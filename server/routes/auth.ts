@@ -2,11 +2,12 @@ import { v } from '../lib/validate'
 import { Hono, type Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { z } from 'zod'
-import { setupSchema } from '../../shared/schemas'
+import { passwordResetConfirmSchema, passwordResetRequestSchema, setupSchema } from '../../shared/schemas'
 import { config } from '../config'
 import { AppError } from '../lib/errors'
 import { hit } from '../lib/rateLimit'
 import * as auth from '../services/auth'
+import * as recovery from '../services/recovery'
 import { me } from '../services/users'
 import { clientIp, type Env, SESSION_COOKIE } from './context'
 
@@ -31,7 +32,12 @@ export const authRoutes = new Hono<Env>()
       pendingSecondFactor: !!session?.pendingSecondFactor,
     })
   })
-  .post('/setup', v('json', setupSchema.extend({ setupToken: z.string().max(200).default('') })), async (c) => {
+  /* Einrichtungscode früh prüfen, bevor das Formular ausgefüllt wird (ändert nichts) */
+  .post('/setup/check', v('json', z.object({ token: z.string().min(1).max(200) })), async (c) => {
+    if (!hit(`setup-check:${clientIp(c)}`, 30, 15 * 60_000)) throw new AppError('rate_limited', 'Zu viele Versuche. Bitte warte ein paar Minuten.')
+    return c.json(await auth.checkSetupToken(c.req.valid('json').token))
+  })
+  .post('/setup', v('json', setupSchema.extend({ setupToken: z.string().min(1, 'Der Einrichtungscode fehlt.').max(200) })), async (c) => {
     if (!hit(`setup:${clientIp(c)}`, 10, 60 * 60_000)) throw new AppError('rate_limited', 'Zu viele Versuche.')
     const { setupToken, ...input } = c.req.valid('json')
     setSession(c, await auth.runSetup(input, setupToken, c.req.header('user-agent')))
@@ -43,8 +49,23 @@ export const authRoutes = new Hono<Env>()
     setSession(c, s)
     return c.json({ needsSecondFactor: s.pendingSecondFactor })
   })
-  .post('/second-factor', v('json', z.object({ code: z.string().min(6).max(10) })), async (c) => {
-    setSession(c, await auth.verifySecondFactor(getCookie(c, SESSION_COOKIE), c.req.valid('json').code, clientIp(c)))
+  .post('/second-factor', v('json', z.object({ code: z.string().min(6).max(20), backup: z.boolean().optional() })), async (c) => {
+    const { code, backup } = c.req.valid('json')
+    setSession(c, await auth.verifySecondFactor(getCookie(c, SESSION_COOKIE), code, clientIp(c), !!backup))
+    return c.json({ ok: true })
+  })
+  /* Passwort vergessen: Antwort immer gleich, egal ob es das Konto gibt */
+  .post('/password-reset/request', v('json', passwordResetRequestSchema), async (c) => {
+    await recovery.requestPasswordReset(c.req.valid('json').email, clientIp(c))
+    return c.json({ ok: true })
+  })
+  .post('/password-reset/check', v('json', z.object({ token: z.string().max(200) })), async (c) => {
+    if (!hit(`pwreset-check:${clientIp(c)}`, 30, 15 * 60_000)) throw new AppError('rate_limited', 'Zu viele Versuche. Bitte warte ein paar Minuten.')
+    return c.json({ ok: await recovery.isResetTokenValid(c.req.valid('json').token) })
+  })
+  .post('/password-reset/confirm', v('json', passwordResetConfirmSchema), async (c) => {
+    const { token, password } = c.req.valid('json')
+    await recovery.resetPassword(token, password, clientIp(c))
     return c.json({ ok: true })
   })
   .post('/logout', async (c) => {

@@ -1,5 +1,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import { hash, verify } from '@node-rs/argon2'
+import { PASSWORD_MAX, PASSWORD_MIN } from '../../shared/schemas'
+import { argonOpts } from '../lib/password'
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -22,11 +24,11 @@ import { clear, hit } from '../lib/rateLimit'
 import { isValidTimeZone } from '../lib/time'
 import { decrypt, encrypt, newId, nowIso, randomToken, RESERVED_HANDLES, sha256, slugify } from '../lib/util'
 import { audit } from './audit'
+import { consumeBackupCode, deleteBackupCodes, remainingBackupCodes, replaceBackupCodes } from './recovery'
 import { createDefaultSchedule } from './schedules'
 import { getSetting, setSetting } from './settings'
 
 const SESSION_DAYS = 30
-const argonOpts = { memoryCost: 19456, timeCost: 2, parallelism: 1 }
 
 /* ---------------- Ersteinrichtung ---------------- */
 
@@ -54,7 +56,14 @@ export async function runSetup(input: z.infer<typeof setupSchema>, setupToken: s
   return createSession(userId, false, userAgent)
 }
 
+/** Stimmt der Einrichtungscode? Für die frühe Prüfung auf der Einrichtungsseite. */
+export async function checkSetupToken(token: string) {
+  if (await isSetupComplete()) return { ok: false, done: true }
+  return { ok: safeEqual(token, config.setupToken), done: false }
+}
+
 function safeEqual(a: string, b: string) {
+  if (!a || !b) return false
   const x = Buffer.from(String(a))
   const y = Buffer.from(String(b))
   return x.length === y.length && timingSafeEqual(x, y)
@@ -132,7 +141,7 @@ async function checkTotp(u: typeof users.$inferSelect, code: string) {
   return claimed.length === 1
 }
 
-export async function verifySecondFactor(sessionToken: string | undefined, code: string, ip: string) {
+export async function verifySecondFactor(sessionToken: string | undefined, code: string, ip: string, backup = false) {
   const s = await sessionFromToken(sessionToken)
   if (!s || !s.pendingSecondFactor) throw new AppError('unauthorized', 'Bitte melde dich erneut an.')
   // Begrenzung pro Konto (über alle IPs) und pro Zwischensitzung
@@ -143,7 +152,13 @@ export async function verifySecondFactor(sessionToken: string | undefined, code:
   }
   const u = await db.query.users.findFirst({ where: eq(users.id, s.userId) })
   if (!u?.totpSecret) throw new AppError('unauthorized', 'Bitte melde dich erneut an.')
-  if (!(await checkTotp(u, code))) throw new AppError('unauthorized', 'Der Code stimmt nicht.')
+  if (backup) {
+    if (!(await consumeBackupCode(u.id, code))) throw new AppError('unauthorized', 'Der Ersatzcode stimmt nicht oder wurde schon benutzt.')
+    const left = await remainingBackupCodes(u.id)
+    await audit({ type: 'user', userId: u.id, role: u.role }, 'Mit Ersatzcode angemeldet', `noch ${left} Ersatzcode${left === 1 ? '' : 's'} übrig`, 'write')
+  } else if (!(await checkTotp(u, code))) {
+    throw new AppError('unauthorized', 'Der Code stimmt nicht.')
+  }
   await db.delete(sessions).where(eq(sessions.id, s.id))
   return createSession(u.id, false)
 }
@@ -166,7 +181,28 @@ export async function confirmTotpSetup(actor: Actor, code: string) {
   if (!u?.totpSecret || u.totpEnabled) throw invalid('Bitte starte die Einrichtung neu.')
   if (!(await checkTotp(u, code))) throw invalid('Der Code stimmt nicht.')
   await db.update(users).set({ totpEnabled: true }).where(eq(users.id, u.id))
+  // Ersatzcodes für den Fall „Handy weg“: werden hier einmal im Klartext ausgegeben
+  const backupCodes = await replaceBackupCodes(u.id)
   await audit(actor, 'Zwei-Faktor-Anmeldung aktiviert', '', 'write')
+  return { backupCodes }
+}
+
+/** Neue Ersatzcodes erzeugen. Die alten sind danach ungültig. */
+export async function regenerateBackupCodes(actor: Actor, password: string) {
+  const a = requireSession(actor)
+  if (!hit(`pw-check:${a.userId}`, 8, 15 * 60_000)) throw new AppError('rate_limited', 'Zu viele Versuche. Bitte warte ein paar Minuten.')
+  const pw = await db.query.users.findFirst({ where: eq(users.id, a.userId), columns: { passwordHash: true } })
+  if (!pw || !(await verify(pw.passwordHash, password))) throw invalid('Das Passwort stimmt nicht.')
+  const u = await db.query.users.findFirst({ where: eq(users.id, a.userId), columns: { id: true, totpEnabled: true } })
+  if (!u?.totpEnabled) throw invalid('Ersatzcodes gibt es nur mit aktiver Zwei-Faktor-Anmeldung.')
+  const backupCodes = await replaceBackupCodes(u.id)
+  await audit(actor, 'Neue Ersatzcodes erzeugt, alte ungültig', '', 'write')
+  return { backupCodes }
+}
+
+export async function backupCodeStatus(actor: Actor) {
+  const a = requireHost(actor)
+  return { remaining: await remainingBackupCodes(a.userId) }
 }
 
 export async function disableTotp(actor: Actor, password: string) {
@@ -175,12 +211,13 @@ export async function disableTotp(actor: Actor, password: string) {
   const u = await db.query.users.findFirst({ where: eq(users.id, a.userId) })
   if (!u || !(await verify(u.passwordHash, password))) throw invalid('Das Passwort stimmt nicht.')
   await db.update(users).set({ totpEnabled: false, totpSecret: null }).where(eq(users.id, u.id))
+  await deleteBackupCodes(u.id)
   await audit(actor, 'Zwei-Faktor-Anmeldung deaktiviert', '', 'write')
 }
 
 export async function changePassword(actor: Actor, current: string, next: string, currentSessionToken?: string) {
   const a = requireSession(actor)
-  if (next.length < 10 || next.length > 200) throw invalid('Das neue Passwort braucht 10 bis 200 Zeichen.')
+  if (next.length < PASSWORD_MIN || next.length > PASSWORD_MAX) throw invalid(`Das neue Passwort braucht ${PASSWORD_MIN} bis ${PASSWORD_MAX} Zeichen.`)
   if (!hit(`pw-check:${a.userId}`, 8, 15 * 60_000)) throw new AppError('rate_limited', 'Zu viele Versuche. Bitte warte ein paar Minuten.')
   const u = await db.query.users.findFirst({ where: eq(users.id, a.userId) })
   if (!u || !(await verify(u.passwordHash, current))) throw invalid('Das aktuelle Passwort stimmt nicht.')

@@ -12,6 +12,7 @@ const Verfuegbarkeit = lazy(() => import('./admin/Verfuegbarkeit').then((m) => (
 const Einstellungen = lazy(() => import('./admin/Einstellungen').then((m) => ({ default: m.Einstellungen })))
 const LoginPage = lazy(() => import('./auth/AuthPages').then((m) => ({ default: m.LoginPage })))
 const SetupPage = lazy(() => import('./auth/AuthPages').then((m) => ({ default: m.SetupPage })))
+const PasswortNeuPage = lazy(() => import('./auth/AuthPages').then((m) => ({ default: m.PasswortNeuPage })))
 const ConsentPage = lazy(() => import('./oauth/Consent').then((m) => ({ default: m.ConsentPage })))
 
 function Root() {
@@ -28,6 +29,7 @@ export default function App() {
         <Route path="/" element={<Root />} />
         <Route path="/setup" element={<SetupPage />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/passwort-neu" element={<PasswortNeuPage />} />
         <Route path="/oauth/consent" element={<ConsentPage />} />
         <Route path="/admin" element={<AdminShell />}>
           <Route index element={<Termine />} />

@@ -11,6 +11,8 @@ services:
     environment:
       PUBLIC_URL: https://${DOMAIN:?DOMAIN fehlt}
       TRUST_PROXY: "true"
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      ALLOW_PRIVATE_HOSTS: ${ALLOW_PRIVATE_HOSTS:-}
     volumes:
       - termind-data:/data
     mem_limit: 256m

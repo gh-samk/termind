@@ -29,6 +29,13 @@
       "when": 1794729500468,
       "tag": "0003_sicherheit",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1794774270084,
+      "tag": "0004_einrichtung",
+      "breakpoints": true
     }
   ]
 }

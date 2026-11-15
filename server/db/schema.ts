@@ -61,6 +61,32 @@ export const apiTokens = sqliteTable('api_tokens', {
   createdAt: createdAt(),
 })
 
+/** Einmal-Links „Passwort vergessen“. Gespeichert wird nur der SHA-256-Hash des Tokens. */
+export const passwordResets = sqliteTable(
+  'password_resets',
+  {
+    id: id(), // SHA-256 des Tokens
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    expiresAt: text('expires_at').notNull(),
+    usedAt: text('used_at'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('password_resets_user_idx').on(t.userId)],
+)
+
+/** Ersatzcodes für die Zwei-Faktor-Anmeldung. Gespeichert wird nur ein HMAC der Codes. */
+export const backupCodes = sqliteTable(
+  'backup_codes',
+  {
+    id: id(),
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    codeHash: text('code_hash').notNull(),
+    usedAt: text('used_at'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('backup_codes_user_idx').on(t.userId)],
+)
+
 /* ---------------- Instanz-Einstellungen ---------------- */
 
 export const settings = sqliteTable('settings', {

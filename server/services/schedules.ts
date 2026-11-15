@@ -1,9 +1,10 @@
 import { and, asc, eq } from 'drizzle-orm'
+import { markAvailabilitySaved } from './onboarding'
 import type { z } from 'zod'
 import type { exceptionSchema, scheduleUpdateSchema } from '../../shared/schemas'
 import type { WeeklyHours } from '../../shared/types'
 import { db } from '../db/client'
-import { scheduleExceptions, schedules } from '../db/schema'
+import { scheduleExceptions, schedules, users } from '../db/schema'
 import { type Actor, requireHost, requireWrite } from '../lib/actor'
 import { invalid, notFound } from '../lib/errors'
 import { isValidTimeZone } from '../lib/time'
@@ -61,6 +62,11 @@ export async function updateSchedule(actor: Actor, input: z.infer<typeof schedul
     }
   }
   await db.update(schedules).set(input).where(eq(schedules.id, s.id))
+  // Für Laien gibt es eine Zeitzone: Hat die Person nur diesen einen Plan, zieht die Zeitzone im Profil mit
+  if (input.timezone && input.timezone !== s.timezone && s.isDefault && (await db.query.schedules.findMany({ where: eq(schedules.userId, a.userId), columns: { id: true } })).length === 1) {
+    await db.update(users).set({ timezone: input.timezone }).where(eq(users.id, a.userId))
+  }
+  await markAvailabilitySaved()
   await audit(actor, 'Wochenzeiten geändert', s.name, 'write')
   return getSchedule(actor, s.id)
 }

@@ -2,7 +2,7 @@ import { and, eq, ne } from 'drizzle-orm'
 import type { z } from 'zod'
 import type { profileSchema } from '../../shared/schemas'
 import { db } from '../db/client'
-import { users } from '../db/schema'
+import { schedules, users } from '../db/schema'
 import { type Actor, requireHost, requireWrite } from '../lib/actor'
 import { AppError, invalid, notFound } from '../lib/errors'
 import { RESERVED_HANDLES } from '../lib/util'
@@ -39,6 +39,11 @@ export async function updateProfile(actor: Actor, input: z.infer<typeof profileS
     if (taken) throw new AppError('conflict', 'Dieser Link ist schon vergeben.')
   }
   await db.update(users).set(input).where(eq(users.id, a.userId))
+  // Eine Zeitzone für alles: Gibt es nur einen Verfügbarkeitsplan, bekommt er die neue Zeitzone mit
+  if (input.timezone) {
+    const own = await db.query.schedules.findMany({ where: eq(schedules.userId, a.userId), columns: { id: true, isDefault: true } })
+    if (own.length === 1 && own[0].isDefault) await db.update(schedules).set({ timezone: input.timezone }).where(eq(schedules.id, own[0].id))
+  }
   await audit(actor, 'Profil geändert', Object.keys(input).join(', '), 'write')
   return me(actor)
 }
