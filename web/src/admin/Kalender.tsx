@@ -2,9 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CalendarDays, Link2, Plus, RotateCw, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api } from '../lib/api'
+import { api, errorMessage } from '../lib/api'
 import { cn } from '../lib/cn'
-import { Badge, Button, Card, Dialog, Field, Input, SectionHeader, Segmented, Switch, toast } from '../ui'
+import { Badge, Button, Card, ConfirmDialog, Dialog, Field, Hint, Input, SectionHeader, Segmented, Switch, toast } from '../ui'
 import { ErrorBox } from './AdminShell'
 
 export interface Connection {
@@ -58,10 +58,19 @@ export function KalenderSettings() {
     qc.invalidateQueries({ queryKey: ['calendars'] })
     qc.invalidateQueries({ queryKey: ['slots'] })
   }
-  const patch = useMutation({ mutationFn: ({ id, body }: { id: string; body: object }) => api(`/api/calendars/${id}`, { method: 'PATCH', body }), onSuccess: invalidate })
-  const sync = useMutation({ mutationFn: (id: string) => api<Connection>(`/api/calendars/${id}/sync`, { body: {} }), onSuccess: (c) => { invalidate(); toast(c.status === 'ok' ? 'Abgeglichen' : 'Abgleich fehlgeschlagen') } })
-  const del = useMutation({ mutationFn: (id: string) => api(`/api/calendars/${id}`, { method: 'DELETE' }), onSuccess: () => { invalidate(); toast('Verbindung entfernt') } })
+  const patch = useMutation({ mutationFn: ({ id, body }: { id: string; body: object }) => api(`/api/calendars/${id}`, { method: 'PATCH', body }), onSuccess: invalidate, onError: (e) => toast.error(errorMessage(e)) })
+  const sync = useMutation({
+    mutationFn: (id: string) => api<Connection>(`/api/calendars/${id}/sync`, { body: {} }),
+    onSuccess: (c) => { invalidate(); if (c.status === 'ok') toast('Abgeglichen'); else toast.error(c.lastError ? `Abgleich fehlgeschlagen: ${c.lastError}` : 'Abgleich fehlgeschlagen') },
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+  const del = useMutation({
+    mutationFn: (id: string) => api(`/api/calendars/${id}`, { method: 'DELETE' }),
+    onSuccess: () => { invalidate(); setRemove(null); toast('Verbindung entfernt') },
+    onError: (e) => { setRemove(null); toast.error(errorMessage(e)) },
+  })
   const [fix, setFix] = useState<Connection | null>(null)
+  const [remove, setRemove] = useState<Connection | null>(null)
 
   return (
     <div className="flex flex-col gap-6">
@@ -73,7 +82,7 @@ export function KalenderSettings() {
         {q.data?.length === 0 && (
           <div className="px-6 py-8 text-center">
             <p className="font-medium">Noch kein Kalender verbunden</p>
-            <p className="mx-auto mt-1 max-w-[52ch] text-sm text-muted">Funktioniert mit Nextcloud, iCloud, mailbox.org, Fastmail, Posteo und jedem CalDAV-Server. Google, Outlook oder Proton bindest du vorerst über einen ICS-Link ein (nur lesen).</p>
+            <p className="mx-auto mt-1 max-w-[52ch] text-sm text-muted">Funktioniert mit Nextcloud, iCloud, mailbox.org, Fastmail, Posteo und jedem Kalender mit Benutzername und Passwort (CalDAV). Google, Outlook oder Proton bindest du vorerst über einen Nur-Lese-Link (ICS-Abo) ein.</p>
           </div>
         )}
         <ul className="divide-y divide-line">
@@ -82,26 +91,28 @@ export function KalenderSettings() {
               <div className="flex flex-wrap items-center gap-3">
                 <span className="flex size-10 items-center justify-center rounded-xl bg-surface-2">{c.kind === 'caldav' ? <CalendarDays className="size-5 text-muted" /> : <Link2 className="size-5 text-muted" />}</span>
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium">{c.name} <span className="font-normal text-muted">· {c.kind === 'caldav' ? 'CalDAV' : 'ICS-Abo'}</span></p>
+                  <p className="font-medium">{c.name} <span className="font-normal text-muted">· {c.kind === 'caldav' ? 'Benutzername/Passwort (CalDAV)' : 'Nur-Lese-Link (ICS-Abo)'}</span></p>
                   <p className={cn('text-sm', c.status === 'error' ? 'text-warn-fg' : 'text-muted')}>
                     {c.status === 'error' ? c.lastError : c.status === 'pending' ? 'Wird abgeglichen …' : `Abgeglichen ${since(c.lastSyncAt)}`}
                   </p>
                 </div>
                 {c.status === 'error' && c.kind === 'caldav' && <Button size="sm" variant="primary" onClick={() => setFix(c)}>Neu anmelden</Button>}
                 <Button size="sm" variant="ghost" disabled={sync.isPending} onClick={() => sync.mutate(c.id)} aria-label="Jetzt abgleichen"><RotateCw className={cn(sync.isPending && sync.variables === c.id && 'animate-spin')} /> Abgleichen</Button>
-                <Button size="icon" variant="ghost" aria-label={`${c.name} entfernen`} onClick={() => del.mutate(c.id)}><Trash2 /></Button>
+                <Button size="icon" variant="ghost" aria-label={`${c.name} entfernen`} onClick={() => setRemove(c)}><Trash2 /></Button>
               </div>
               {c.kind === 'caldav' && (
                 <ul className="mt-4 flex flex-col gap-1 rounded-xl border border-line p-1.5">
-                  {c.calendars.map((k) => (
+                  {c.calendars.map((k, ki) => (
                     <li key={k.url} className="flex flex-wrap items-center gap-3 rounded-lg px-2.5 py-2 hover:bg-surface-2/50">
                       <span className="size-2.5 shrink-0 rounded-full" style={{ background: k.color || 'var(--border-strong)' }} aria-hidden />
                       <span className="min-w-0 flex-1 truncate text-sm">{k.name}</span>
+                      <div className="flex items-center gap-2 text-[13px] text-muted">
+                        <Switch id={`busy-${c.id}-${ki}`} label={`Belegte Zeiten blockieren: ${k.name}`} checked={k.checkBusy} onCheckedChange={(v) => patch.mutate({ id: c.id, body: { calendars: [{ url: k.url, checkBusy: v }] } })} />
+                        <label htmlFor={`busy-${c.id}-${ki}`}>Belegte Zeiten blockieren</label>
+                        <Hint label="Belegte Zeiten blockieren">Ist das aktiv, sind Zeiten, zu denen in diesem Kalender schon etwas steht, auf deiner Buchungsseite nicht buchbar.</Hint>
+                      </div>
                       <label className="flex items-center gap-2 text-[13px] text-muted">
-                        <Switch label={`${k.name}: belegte Zeiten prüfen`} checked={k.checkBusy} onCheckedChange={(v) => patch.mutate({ id: c.id, body: { calendars: [{ url: k.url, checkBusy: v }] } })} /> Belegt prüfen
-                      </label>
-                      <label className="flex items-center gap-2 text-[13px] text-muted">
-                        <input type="radio" name="write-calendar" checked={c.writeCalendarUrl === k.url} onChange={() => patch.mutate({ id: c.id, body: { writeCalendarUrl: k.url } })} className="size-4 accent-[var(--accent)]" /> Termine hier eintragen
+                        <input type="radio" name="write-calendar" checked={c.writeCalendarUrl === k.url} onChange={() => patch.mutate({ id: c.id, body: { writeCalendarUrl: k.url } })} className="size-4 accent-[var(--accent)]" /> Neue Termine hier eintragen
                       </label>
                     </li>
                   ))}
@@ -112,6 +123,16 @@ export function KalenderSettings() {
         </ul>
       </Card>
       <p className="text-[13px] text-muted">Tipp: Lege für termind ein eigenes App-Passwort an (bei Nextcloud unter Einstellungen → Sicherheit, bei iCloud auf appleid.apple.com). Dein Hauptpasswort brauchst du nicht.</p>
+      <ConfirmDialog
+        open={!!remove}
+        onOpenChange={(o) => !o && setRemove(null)}
+        title="Kalenderverbindung entfernen?"
+        description={remove ? `Neue Termine werden dann nicht mehr in „${remove.name}“ eingetragen, und belegte Zeiten daraus werden nicht mehr ausgespart. Der Kalender selbst bleibt unverändert.` : undefined}
+        confirmLabel="Entfernen"
+        cancelLabel="Behalten"
+        pending={del.isPending}
+        onConfirm={() => remove && del.mutate(remove.id)}
+      />
       <AddCalendar open={add} onOpenChange={setAdd} />
       <Relogin conn={fix} onClose={() => setFix(null)} />
     </div>
@@ -129,7 +150,8 @@ function AddCalendar({ open, onOpenChange }: { open: boolean; onOpenChange: (o: 
       qc.invalidateQueries({ queryKey: ['slots'] })
       onOpenChange(false)
       setF({ url: '', username: '', password: '', name: '' })
-      toast(c.status === 'ok' ? `Verbunden: ${c.calendars.length} Kalender` : 'Verbunden, Abgleich hatte einen Fehler')
+      if (c.status === 'ok') toast(`Verbunden: ${c.calendars.length} Kalender`)
+      else toast.error('Verbunden, aber der erste Abgleich hat nicht geklappt. Prüfe die Angaben.')
     },
   })
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value })
@@ -141,17 +163,17 @@ function AddCalendar({ open, onOpenChange }: { open: boolean; onOpenChange: (o: 
       footer={<><Button variant="ghost" onClick={() => onOpenChange(false)}>Abbrechen</Button><Button variant="primary" disabled={m.isPending || !f.url || (kind === 'caldav' && (!f.username || !f.password))} onClick={() => m.mutate()}>{m.isPending ? 'Verbinde …' : 'Verbinden'}</Button></>}
     >
       <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); m.mutate() }}>
-        <Segmented value={kind} onChange={setKind} options={[{ value: 'caldav', label: 'CalDAV (lesen & schreiben)' }, { value: 'ics', label: 'ICS-Link (nur lesen)' }]} />
+        <Segmented label="Art des Kalenders" value={kind} onChange={setKind} options={[{ value: 'caldav', label: 'Mit Benutzername/Passwort (CalDAV)' }, { value: 'ics', label: 'Nur-Lese-Link (ICS-Abo)' }]} />
         {kind === 'caldav' ? (
           <>
-            <Field label="Server-Adresse" htmlFor="cu" hint="Nextcloud: https://cloud.example.de/remote.php/dav · iCloud: https://caldav.icloud.com · mailbox.org: https://dav.mailbox.org">
+            <Field label="Server-Adresse" htmlFor="cu" required hint="Nextcloud: https://cloud.example.de/remote.php/dav · iCloud: https://caldav.icloud.com · mailbox.org: https://dav.mailbox.org">
               <Input id="cu" required type="url" value={f.url} onChange={set('url')} className="font-mono text-[13px]" />
             </Field>
-            <Field label="Benutzername" htmlFor="cn"><Input id="cn" required autoComplete="off" value={f.username} onChange={set('username')} /></Field>
-            <Field label="App-Passwort" htmlFor="cp" hint="Wird verschlüsselt gespeichert."><Input id="cp" required type="password" autoComplete="new-password" value={f.password} onChange={set('password')} /></Field>
+            <Field label="Benutzername" htmlFor="cn" required><Input id="cn" required autoComplete="off" value={f.username} onChange={set('username')} /></Field>
+            <Field label="App-Passwort" htmlFor="cp" required hint="Wird verschlüsselt gespeichert."><Input id="cp" required type="password" autoComplete="new-password" value={f.password} onChange={set('password')} /></Field>
           </>
         ) : (
-          <Field label="ICS-Adresse" htmlFor="iu" hint="Google: Kalendereinstellungen → „Privatadresse im iCal-Format“. Outlook: Kalender veröffentlichen → ICS-Link. Proton: Kalender teilen → Link.">
+          <Field label="Adresse des Links (ICS)" htmlFor="iu" required hint="Google: Kalendereinstellungen → „Privatadresse im iCal-Format“. Outlook: Kalender veröffentlichen → ICS-Link. Proton: Kalender teilen → Link.">
             <Input id="iu" required value={f.url} onChange={set('url')} placeholder="https://… oder webcal://…" className="font-mono text-[13px]" />
           </Field>
         )}

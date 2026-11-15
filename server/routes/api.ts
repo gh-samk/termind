@@ -1,4 +1,4 @@
-import { zValidator } from '@hono/zod-validator'
+import { v } from '../lib/validate'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { brandingSchema, cancelSchema, exceptionSchema, profileSchema, rescheduleSchema, scheduleUpdateSchema, smtpSchema } from '../../shared/schemas'
@@ -32,7 +32,7 @@ export const apiRoutes = new Hono<Env>()
   .use(requireLogin)
   /* Profil */
   .get('/me', async (c) => c.json(await me(c.get('actor'))))
-  .patch('/me', zValidator('json', profileSchema), async (c) => c.json(await updateProfile(c.get('actor'), c.req.valid('json'))))
+  .patch('/me', v('json', profileSchema), async (c) => c.json(await updateProfile(c.get('actor'), c.req.valid('json'))))
 
   /* Terminseiten */
   .get('/event-types', async (c) => c.json(await eventTypes.listEventTypes(c.get('actor'))))
@@ -40,7 +40,7 @@ export const apiRoutes = new Hono<Env>()
   .get('/event-types/:id', async (c) => c.json(await eventTypes.getEventType(c.get('actor'), c.req.param('id'))))
   .patch('/event-types/:id', async (c) => c.json(await eventTypes.updateEventType(c.get('actor'), c.req.param('id'), await c.req.json())))
   .delete('/event-types/:id', async (c) => c.json(await eventTypes.deleteEventType(c.get('actor'), c.req.param('id'))))
-  .get('/event-types/:id/slots', zValidator('query', z.object({ from: date, to: date, tz: z.string() })), async (c) => {
+  .get('/event-types/:id/slots', v('query', z.object({ from: date, to: date, tz: z.string() })), async (c) => {
     const e = await eventTypes.getEventType(c.get('actor'), c.req.param('id'))
     const { from, to, tz } = c.req.valid('query')
     return c.json({ slots: await bookings.getSlots(e, from, to, tz) })
@@ -48,25 +48,25 @@ export const apiRoutes = new Hono<Env>()
 
   /* Verfügbarkeit */
   .get('/schedule', async (c) => c.json(await schedules.getSchedule(c.get('actor'))))
-  .patch('/schedule', zValidator('json', scheduleUpdateSchema), async (c) => c.json(await schedules.updateSchedule(c.get('actor'), c.req.valid('json'))))
-  .post('/schedule/exceptions', zValidator('json', exceptionSchema), async (c) => c.json(await schedules.addException(c.get('actor'), c.req.valid('json')), 201))
+  .patch('/schedule', v('json', scheduleUpdateSchema), async (c) => c.json(await schedules.updateSchedule(c.get('actor'), c.req.valid('json'))))
+  .post('/schedule/exceptions', v('json', exceptionSchema), async (c) => c.json(await schedules.addException(c.get('actor'), c.req.valid('json')), 201))
   .delete('/schedule/exceptions/:id', async (c) => {
     await schedules.deleteException(c.get('actor'), c.req.param('id'))
     return c.json({ ok: true })
   })
 
   /* Termine */
-  .get('/bookings', zValidator('query', z.object({ view: z.enum(['upcoming', 'pending', 'past', 'all']).optional(), q: z.string().max(100).optional() })), async (c) =>
+  .get('/bookings', v('query', z.object({ view: z.enum(['upcoming', 'pending', 'past', 'all']).optional(), q: z.string().max(100).optional() })), async (c) =>
     c.json((await bookings.listBookings(c.get('actor'), c.req.valid('query'))).map(hideSecrets)),
   )
   .post('/bookings', async (c) => c.json(hideSecrets(await bookings.createBooking(c.get('actor'), await c.req.json())), 201))
   .get('/bookings/:id', async (c) => c.json(hideSecrets(await bookings.getBooking(c.get('actor'), c.req.param('id')))))
-  .patch('/bookings/:id', zValidator('json', z.object({ note: z.string().max(4000) })), async (c) =>
+  .patch('/bookings/:id', v('json', z.object({ note: z.string().max(4000) })), async (c) =>
     c.json(hideSecrets(await bookings.updateBookingNote(c.get('actor'), c.req.param('id'), c.req.valid('json').note))),
   )
-  .post('/bookings/:id/cancel', zValidator('json', cancelSchema), async (c) => c.json(hideSecrets(await bookings.cancelBooking(c.get('actor'), c.req.param('id'), c.req.valid('json').reason))))
+  .post('/bookings/:id/cancel', v('json', cancelSchema), async (c) => c.json(hideSecrets(await bookings.cancelBooking(c.get('actor'), c.req.param('id'), c.req.valid('json').reason))))
   .post('/bookings/:id/accept', async (c) => c.json(hideSecrets(await bookings.acceptBooking(c.get('actor'), c.req.param('id')))))
-  .post('/bookings/:id/reschedule', zValidator('json', rescheduleSchema), async (c) => {
+  .post('/bookings/:id/reschedule', v('json', rescheduleSchema), async (c) => {
     const { start, reason } = c.req.valid('json')
     return c.json(hideSecrets(await bookings.rescheduleBooking(c.get('actor'), c.req.param('id'), start, reason)))
   })
@@ -76,9 +76,9 @@ export const apiRoutes = new Hono<Env>()
     requireOwner(c.get('actor'))
     return c.json({ branding: await getSetting('branding'), smtp: publicSmtp(await getSetting('smtp')), mail: await mailQueueStatus() })
   })
-  .put('/settings/branding', zValidator('json', brandingSchema), async (c) => c.json(await updateBranding(c.get('actor'), c.req.valid('json'))))
-  .put('/settings/smtp', zValidator('json', smtpSchema), async (c) => c.json(await updateSmtp(c.get('actor'), c.req.valid('json'))))
-  .post('/settings/smtp/test', zValidator('json', z.object({ to: z.email() })), async (c) => {
+  .put('/settings/branding', v('json', brandingSchema), async (c) => c.json(await updateBranding(c.get('actor'), c.req.valid('json'))))
+  .put('/settings/smtp', v('json', smtpSchema), async (c) => c.json(await updateSmtp(c.get('actor'), c.req.valid('json'))))
+  .post('/settings/smtp/test', v('json', z.object({ to: z.email() })), async (c) => {
     requireOwner(c.get('actor'))
     await sendTestMail(c.req.valid('json').to)
     return c.json({ ok: true })
@@ -97,7 +97,7 @@ export const apiRoutes = new Hono<Env>()
 
   /* OAuth-Zustimmung & Connectors */
   .get('/oauth/requests/:id', async (c) => c.json(await oauth.describeRequest(c.get('actor'), c.req.param('id'))))
-  .post('/oauth/requests/:id/decision', zValidator('json', z.object({ approve: z.boolean(), scope: z.enum(['read', 'write']).optional() })), async (c) => {
+  .post('/oauth/requests/:id/decision', v('json', z.object({ approve: z.boolean(), scope: z.enum(['read', 'write']).optional() })), async (c) => {
     const { approve, scope } = c.req.valid('json')
     return c.json(await oauth.decide(c.get('actor'), c.req.param('id'), approve, scope))
   })
@@ -109,9 +109,9 @@ export const apiRoutes = new Hono<Env>()
 
   /* Datenschutz */
   .get('/privacy', async (c) => c.json(await privacy.getPrivacySettings(c.get('actor'))))
-  .put('/privacy', zValidator('json', z.object({ retentionMonths: z.number().int() })), async (c) => c.json(await privacy.setRetention(c.get('actor'), c.req.valid('json').retentionMonths)))
-  .post('/privacy/export', zValidator('json', z.object({ email: z.string().max(200) })), async (c) => c.json(await privacy.exportPersonalData(c.get('actor'), c.req.valid('json').email)))
-  .post('/privacy/erase', zValidator('json', z.object({ email: z.string().max(200) })), async (c) => c.json(await privacy.erasePersonalData(c.get('actor'), c.req.valid('json').email)))
+  .put('/privacy', v('json', z.object({ retentionMonths: z.number().int() })), async (c) => c.json(await privacy.setRetention(c.get('actor'), c.req.valid('json').retentionMonths)))
+  .post('/privacy/export', v('json', z.object({ email: z.string().max(200) })), async (c) => c.json(await privacy.exportPersonalData(c.get('actor'), c.req.valid('json').email)))
+  .post('/privacy/erase', v('json', z.object({ email: z.string().max(200) })), async (c) => c.json(await privacy.erasePersonalData(c.get('actor'), c.req.valid('json').email)))
 
   /* Webhooks */
   .get('/webhooks', async (c) => c.json(await webhooks.listWebhooks(c.get('actor'))))
@@ -135,7 +135,7 @@ export const apiRoutes = new Hono<Env>()
   })
 
   /* Sicherheit */
-  .post('/security/password', zValidator('json', z.object({ current: z.string().max(200), next: z.string().max(200) })), async (c) => {
+  .post('/security/password', v('json', z.object({ current: z.string().max(200), next: z.string().max(200) })), async (c) => {
     const { current, next } = c.req.valid('json')
     await auth.changePassword(c.get('actor'), current, next, getCookie(c, SESSION_COOKIE))
     return c.json({ ok: true })
@@ -145,17 +145,17 @@ export const apiRoutes = new Hono<Env>()
     return c.json({ ok: true })
   })
   .post('/security/totp/start', async (c) => c.json(await auth.startTotpSetup(c.get('actor'))))
-  .post('/security/totp/confirm', zValidator('json', z.object({ code: z.string() })), async (c) => {
+  .post('/security/totp/confirm', v('json', z.object({ code: z.string() })), async (c) => {
     await auth.confirmTotpSetup(c.get('actor'), c.req.valid('json').code)
     return c.json({ ok: true })
   })
-  .post('/security/totp/disable', zValidator('json', z.object({ password: z.string() })), async (c) => {
+  .post('/security/totp/disable', v('json', z.object({ password: z.string() })), async (c) => {
     await auth.disableTotp(c.get('actor'), c.req.valid('json').password)
     return c.json({ ok: true })
   })
   .get('/passkeys', async (c) => c.json(await auth.listPasskeys(c.get('actor'))))
   .post('/passkeys/options', async (c) => c.json(await auth.passkeyRegistrationOptions(c.get('actor'))))
-  .post('/passkeys', zValidator('json', z.object({ challengeId: z.string(), response: z.any(), name: z.string().max(80).optional() })), async (c) => {
+  .post('/passkeys', v('json', z.object({ challengeId: z.string(), response: z.any(), name: z.string().max(80).optional() })), async (c) => {
     const { challengeId, response, name } = c.req.valid('json')
     return c.json(await auth.passkeyRegister(c.get('actor'), challengeId, response, name), 201)
   })
@@ -166,7 +166,7 @@ export const apiRoutes = new Hono<Env>()
 
   /* API-Schlüssel & Protokoll */
   .get('/tokens', async (c) => c.json(await auth.listApiTokens(c.get('actor'))))
-  .post('/tokens', zValidator('json', z.object({ name: z.string().min(1).max(80), scope: z.enum(['read', 'write']) })), async (c) => {
+  .post('/tokens', v('json', z.object({ name: z.string().min(1).max(80), scope: z.enum(['read', 'write']) })), async (c) => {
     const { name, scope } = c.req.valid('json')
     return c.json(await auth.createApiToken(c.get('actor'), name, scope), 201)
   })

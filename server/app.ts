@@ -1,9 +1,11 @@
 import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono } from 'hono'
+import { HTTPException } from 'hono/http-exception'
 import { secureHeaders } from 'hono/secure-headers'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { ZodError } from 'zod'
+import { firstMessage } from './lib/validate'
 import { config } from './config'
 import { EMBED_JS } from './embed'
 import { RESERVED_HANDLES } from './lib/util'
@@ -101,8 +103,13 @@ export function createApp() {
   app.onError((err, c) => {
     if (err instanceof AppError) return c.json({ error: { code: err.code, message: err.message } }, err.status as 400)
     if (err instanceof ZodError) {
-      const first = err.issues[0]
-      return c.json({ error: { code: 'invalid', message: first?.message ?? 'Ungültige Eingabe', issues: err.issues } }, 400)
+      return c.json({ error: { code: 'invalid', message: firstMessage(err), issues: err.issues } }, 400)
+    }
+    if (err instanceof HTTPException) {
+      // Ausnahmen mit eigener Antwort (z. B. aus Middleware) unverändert durchreichen
+      if (err.res) return err.getResponse()
+      const message = err.status === 400 ? 'Ungültiges JSON.' : err.status === 413 ? 'Anfrage zu groß.' : err.status === 401 || err.status === 403 ? 'Kein Zugriff.' : 'Anfrage konnte nicht verarbeitet werden.'
+      return c.json({ error: { code: err.status === 400 ? 'invalid' : 'error', message } }, err.status)
     }
     if (err instanceof SyntaxError) return c.json({ error: { code: 'invalid', message: 'Ungültiges JSON.' } }, 400)
     console.error(err)

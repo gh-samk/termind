@@ -1,4 +1,4 @@
-import { zValidator } from '@hono/zod-validator'
+import { v } from '../lib/validate'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { cancelSchema, rescheduleSchema } from '../../shared/schemas'
@@ -34,7 +34,7 @@ export const publicRoutes = new Hono<Env>()
     const e = await findPublicEventType(u.id, c.req.param('slug'))
     return c.json({ host: publicHost(u), eventType: toPublicEventType(e, locale(c)) })
   })
-  .get('/event-types/:id/slots', zValidator('query', slotQuery), async (c) => {
+  .get('/event-types/:id/slots', v('query', slotQuery), async (c) => {
     if (!hit(`slots:${clientIp(c)}`, 120, 60_000)) throw new AppError('rate_limited', 'Zu viele Anfragen. Bitte kurz warten.')
     const { from, to, tz } = c.req.valid('query')
     const e = await db.query.eventTypes.findFirst({ where: (t, { eq, and }) => and(eq(t.id, c.req.param('id')), eq(t.active, true)) })
@@ -52,18 +52,18 @@ export const publicRoutes = new Hono<Env>()
     const { booking, eventType, host } = await getBookingByToken(c.req.param('token'))
     return c.json({ booking: publicBooking(booking, eventType), host: publicHost(host), eventType: toPublicEventType(eventType, booking.locale) })
   })
-  .get('/b/:token/slots', zValidator('query', slotQuery), async (c) => {
+  .get('/b/:token/slots', v('query', slotQuery), async (c) => {
     if (!hit(`slots:${clientIp(c)}`, 120, 60_000)) throw new AppError('rate_limited', 'Zu viele Anfragen. Bitte kurz warten.')
     const { from, to, tz } = c.req.valid('query')
     const { booking, eventType } = await getBookingByToken(c.req.param('token'))
     return c.json({ slots: await getSlots(eventType, from, to, tz, booking.id) })
   })
-  .post('/b/:token/cancel', zValidator('json', cancelSchema), async (c) => {
+  .post('/b/:token/cancel', v('json', cancelSchema), async (c) => {
     if (!hit(`cancel:${clientIp(c)}`, 20, 60 * 60_000)) throw new AppError('rate_limited', 'Zu viele Anfragen.')
     await guestCancel(c.req.param('token'), c.req.valid('json').reason)
     return c.json({ ok: true })
   })
-  .post('/b/:token/reschedule', zValidator('json', rescheduleSchema), async (c) => {
+  .post('/b/:token/reschedule', v('json', rescheduleSchema), async (c) => {
     if (!hit(`move:${clientIp(c)}`, 10, 60 * 60_000) || !hit(`move-token:${c.req.param('token')}`, 5, 60 * 60_000)) throw new AppError('rate_limited', 'Zu viele Änderungen. Bitte später noch einmal.')
     await guestReschedule(c.req.param('token'), c.req.valid('json').start)
     return c.json({ ok: true })

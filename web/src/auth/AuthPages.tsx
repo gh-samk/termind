@@ -45,7 +45,7 @@ export function SetupPage() {
   if (auth.data?.setupComplete) return <Navigate to="/admin" replace />
   if (!setupToken) {
     return (
-      <AuthCard title="Einrichtungslink nötig" subtitle="Damit niemand Fremdes deine neue Instanz übernimmt, lässt sich das erste Konto nur mit dem Einrichtungslink anlegen.">
+      <AuthCard title="Einrichtungslink nötig" subtitle="Damit niemand Fremdes deine neue termind-Installation übernimmt, lässt sich das erste Konto nur mit dem Einrichtungslink anlegen.">
         <p className="text-[15px] text-muted">Du findest ihn im Server-Log, zum Beispiel mit:</p>
         <pre className="mt-3 overflow-x-auto rounded-xl bg-sunken p-4 font-mono text-[13px] ring-1 ring-line ring-inset">docker compose logs termind | grep setup</pre>
       </AuthCard>
@@ -53,12 +53,12 @@ export function SetupPage() {
   }
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value })
   return (
-    <AuthCard title="Willkommen bei termind" subtitle="Lege dein Konto an. Danach richtest du E-Mail-Versand und deine erste Terminseite ein.">
+    <AuthCard title="Willkommen bei termind" subtitle="Lege dein Konto an. Danach richtest du den Mail-Versand und deine erste Terminseite ein.">
       <form className="flex flex-col gap-4" onSubmit={(e: FormEvent) => { e.preventDefault(); m.mutate() }}>
         <Field label="Dein Name" htmlFor="name"><Input id="name" required autoComplete="name" value={f.name} onChange={set('name')} /></Field>
         <Field label="E-Mail" htmlFor="email" hint="Damit meldest du dich an. Hierhin gehen auch Benachrichtigungen."><Input id="email" type="email" required autoComplete="email" value={f.email} onChange={set('email')} /></Field>
         <Field label="Passwort" htmlFor="pw" hint="Mindestens 10 Zeichen. Passkey und Zwei-Faktor-Anmeldung kannst du danach ergänzen."><Input id="pw" type="password" required minLength={10} autoComplete="new-password" value={f.password} onChange={set('password')} /></Field>
-        <Field label="Name der Instanz (optional)" htmlFor="inst" hint="Erscheint in Mails, z. B. dein Firmenname."><Input id="inst" value={f.instanceName} placeholder={f.name || 'z. B. Berger Coaching'} onChange={set('instanceName')} /></Field>
+        <Field label="Firmen- oder Anzeigename (optional)" htmlFor="inst" hint="Erscheint als Absender in deinen Mails, z. B. dein Firmenname."><Input id="inst" value={f.instanceName} placeholder={f.name || 'z. B. Berger Coaching'} onChange={set('instanceName')} /></Field>
         <Field label="Zeitzone" htmlFor="tz"><Input id="tz" value={f.timezone} onChange={set('timezone')} /></Field>
         <ErrorText error={m.error} />
         <Button type="submit" variant="primary" size="lg" className="mt-2" disabled={m.isPending}>Konto anlegen</Button>

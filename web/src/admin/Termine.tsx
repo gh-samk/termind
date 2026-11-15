@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { LocationIcon } from '../components/LocationIcon'
 import { useAuth } from '../auth/useAuth'
-import { api } from '../lib/api'
+import { api, errorMessage } from '../lib/api'
 import { cn } from '../lib/cn'
 import { fmtDateLong, fmtDayMonth, fmtTime, fmtWeekday, isoDateIn, relativeDays } from '../lib/format'
 import { Avatar, Badge, Button, Dialog, Field, Input, Segmented, Sheet, Textarea, toast } from '../ui'
@@ -34,7 +34,7 @@ export function Termine() {
       qc.invalidateQueries({ queryKey: ['bookings'] })
       toast(`Bestätigt, Mail an ${b.guestName.split(' ')[0]} ist raus`)
     },
-    onError: (e) => toast(e instanceof Error ? e.message : 'Fehler'),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const groups = useMemo(() => {
@@ -54,6 +54,7 @@ export function Termine() {
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <Segmented
+          label="Ansicht"
           value={view}
           onChange={setView}
           options={[
@@ -194,6 +195,7 @@ function BookingSheet({ b, tz, onClose, onCancel }: { b: Booking | null; tz: str
   const save = useMutation({
     mutationFn: () => api(`/api/bookings/${b!.id}`, { method: 'PATCH', body: { note } }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['booking', b!.id] }); toast('Notiz gespeichert') },
+    onError: (e) => toast.error(errorMessage(e)),
   })
   const active = b && (b.status === 'confirmed' || b.status === 'pending')
   return (
@@ -236,8 +238,8 @@ function BookingSheet({ b, tz, onClose, onCancel }: { b: Booking | null; tz: str
               </div>
             ))}
           </dl>
-          <Field label="Interne Notiz" hint="Sieht nur dein Team.">
-            <Textarea value={note} onChange={(e) => setNote(e.target.value)} onBlur={() => note !== b.note && save.mutate()} placeholder="z. B. Vorbereitung, Kontext …" />
+          <Field label="Interne Notiz" htmlFor="booking-note" hint="Sieht nur dein Team.">
+            <Textarea id="booking-note" value={note} onChange={(e) => setNote(e.target.value)} onBlur={() => note !== b.note && save.mutate()} placeholder="z. B. Vorbereitung, Kontext …" />
           </Field>
         </div>
       )}

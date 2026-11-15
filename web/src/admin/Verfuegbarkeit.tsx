@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarOff, Copy, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { DAY_KEYS, type DayKey, type WeeklyHours } from '@shared/types'
-import { api } from '../lib/api'
+import { api, errorMessage } from '../lib/api'
 import { isoDateIn } from '../lib/format'
 import { cn } from '../lib/cn'
 import { Badge, Button, Card, Dialog, Field, Input, SectionHeader, Segmented, Select, Switch, toast } from '../ui'
@@ -38,12 +38,23 @@ export function Verfuegbarkeit() {
     mutationFn: () => api<Schedule>('/api/schedule', { method: 'PATCH', body: { weekly: week, timezone: tz } }),
     onSuccess: (s) => { qc.setQueryData(['schedule'], s); qc.invalidateQueries({ queryKey: ['slots'] }); toast('Gespeichert') },
   })
+  const restoreEx = useMutation({
+    mutationFn: (x: Schedule['exceptions'][number]) => api('/api/schedule/exceptions', { body: { title: x.title, fromDate: x.fromDate, toDate: x.toDate, kind: x.kind, hours: x.kind === 'hours' ? (x.hours ?? undefined) : undefined } }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule'] }); qc.invalidateQueries({ queryKey: ['slots'] }) },
+    onError: (e) => toast.error(`Wiederherstellen hat nicht geklappt: ${errorMessage(e)}`),
+  })
   const delEx = useMutation({
-    mutationFn: (id: string) => api(`/api/schedule/exceptions/${id}`, { method: 'DELETE' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['schedule'] }),
+    mutationFn: (x: Schedule['exceptions'][number]) => api(`/api/schedule/exceptions/${x.id}`, { method: 'DELETE' }),
+    onSuccess: (_r, x) => {
+      qc.invalidateQueries({ queryKey: ['schedule'] })
+      qc.invalidateQueries({ queryKey: ['slots'] })
+      toast(`Ausnahme „${x.title}“ gelöscht`, { action: { label: 'Rückgängig', onClick: () => restoreEx.mutate(x) } })
+    },
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   if (!week || !q.data) return <ErrorBox error={q.error} />
+  const badDays = DAY_KEYS.filter((d) => week[d].some(([a, b]) => b <= a))
   const update = (d: DayKey, ranges: [string, string][]) => setWeek((w) => ({ ...w!, [d]: ranges }))
 
   return (
@@ -51,9 +62,12 @@ export function Verfuegbarkeit() {
       <PageHeader
         title="Verfügbarkeit"
         description="Wann du grundsätzlich buchbar bist. Bestehende Termine werden automatisch ausgespart."
-        actions={<Button variant="primary" disabled={!dirty || save.isPending} onClick={() => save.mutate()}>{dirty ? 'Speichern' : 'Gespeichert'}</Button>}
+        actions={<Button variant="primary" disabled={!dirty || save.isPending || badDays.length > 0} onClick={() => save.mutate()}>{dirty ? 'Speichern' : 'Gespeichert'}</Button>}
       />
-      <div className="mb-6"><ErrorBox error={save.error} /></div>
+      <div className="mb-6 flex flex-col gap-3">
+        <ErrorBox error={save.error} />
+        {badDays.length > 0 && <p role="alert" className="rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger-soft-fg">Bei {badDays.map((d) => dayNames[d]).join(', ')} liegt das Ende nicht nach dem Beginn. Bitte korrigiere die markierten Zeiten, dann kannst du speichern.</p>}
+      </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <Card>
@@ -77,9 +91,9 @@ export function Verfuegbarkeit() {
                     <div className="flex flex-1 flex-col gap-2">
                       {ranges.map(([a, b], i) => (
                         <div key={i} className="flex items-center gap-1.5 sm:gap-2">
-                          <TimeSelect value={a} onChange={(v) => update(d, ranges.map((r, j) => (j === i ? [v, r[1]] : r)))} label={`${dayNames[d]} von`} />
+                          <TimeSelect value={a} invalid={b <= a} onChange={(v) => update(d, ranges.map((r, j) => (j === i ? [v, r[1]] : r)))} label={`${dayNames[d]} von`} />
                           <span className="text-subtle" aria-hidden>–</span>
-                          <TimeSelect value={b} onChange={(v) => update(d, ranges.map((r, j) => (j === i ? [r[0], v] : r)))} label={`${dayNames[d]} bis`} />
+                          <TimeSelect value={b} invalid={b <= a} onChange={(v) => update(d, ranges.map((r, j) => (j === i ? [r[0], v] : r)))} label={`${dayNames[d]} bis`} />
                           {i === 0 ? (
                             <>
                               <Button variant="ghost" size="icon" aria-label="Weiteren Zeitraum hinzufügen" onClick={() => {
@@ -123,7 +137,7 @@ export function Verfuegbarkeit() {
                       <p className="text-[13px] text-muted tabular">{fmtRange(x.fromDate, x.toDate)}</p>
                     </div>
                     {x.kind === 'off' ? <Badge>Frei</Badge> : <Badge tone="accent">{x.hours?.map((h) => h.join('–')).join(', ')}</Badge>}
-                    <Button variant="ghost" size="icon" aria-label={`Ausnahme ${x.title} löschen`} onClick={() => delEx.mutate(x.id)} className="-mr-2"><Trash2 /></Button>
+                    <Button variant="ghost" size="icon" aria-label={`Ausnahme ${x.title} löschen`} onClick={() => delEx.mutate(x)} className="-mr-2"><Trash2 /></Button>
                   </li>
                 ))}
               </ul>
@@ -137,9 +151,9 @@ export function Verfuegbarkeit() {
   )
 }
 
-function TimeSelect({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
+function TimeSelect({ value, onChange, label, invalid }: { value: string; onChange: (v: string) => void; label: string; invalid?: boolean }) {
   return (
-    <Select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)} className="h-10 w-[92px] pr-7 pl-2.5 tabular sm:w-[104px] sm:pr-8 sm:pl-3">
+    <Select aria-label={label} aria-invalid={invalid || undefined} value={value} onChange={(e) => onChange(e.target.value)} className={cn('h-10 w-[92px] pr-7 pl-2.5 tabular sm:w-[104px] sm:pr-8 sm:pl-3', invalid && 'border-danger ring-2 ring-danger/20')}>
       {times.map((t) => <option key={t}>{t}</option>)}
     </Select>
   )
@@ -163,9 +177,9 @@ function AddException({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule'] }); onOpenChange(false); toast('Ausnahme angelegt') },
   })
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="Ausnahme hinzufügen" footer={<><Button variant="ghost" onClick={() => onOpenChange(false)}>Abbrechen</Button><Button variant="primary" disabled={m.isPending} onClick={() => m.mutate()}>Hinzufügen</Button></>}>
+    <Dialog open={open} onOpenChange={onOpenChange} title="Ausnahme hinzufügen" footer={<><Button variant="ghost" onClick={() => onOpenChange(false)}>Abbrechen</Button><Button variant="primary" disabled={m.isPending || (kind === 'hours' && hours[1] <= hours[0])} onClick={() => m.mutate()}>Hinzufügen</Button></>}>
       <div className="flex flex-col gap-4">
-        <Segmented value={kind} onChange={(k) => { setKind(k); if (k === 'hours' && title === 'Urlaub') setTitle('Andere Zeiten') }} options={[{ value: 'off', label: 'Nicht verfügbar' }, { value: 'hours', label: 'Andere Zeiten' }]} />
+        <Segmented label="Art der Ausnahme" value={kind} onChange={(k) => { setKind(k); if (k === 'hours' && title === 'Urlaub') setTitle('Andere Zeiten') }} options={[{ value: 'off', label: 'Nicht verfügbar' }, { value: 'hours', label: 'Andere Zeiten' }]} />
         <Field label="Bezeichnung" htmlFor="xt"><Input id="xt" value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Von" htmlFor="xf"><Input id="xf" type="date" value={from} onChange={(e) => { setFrom(e.target.value); if (to < e.target.value) setTo(e.target.value) }} /></Field>
@@ -173,9 +187,10 @@ function AddException({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
         </div>
         {kind === 'hours' && (
           <div className="flex items-center gap-2">
-            <TimeSelect value={hours[0]} onChange={(v) => setHours([v, hours[1]])} label="von" /> <span className="text-subtle">–</span> <TimeSelect value={hours[1]} onChange={(v) => setHours([hours[0], v])} label="bis" />
+            <TimeSelect value={hours[0]} invalid={hours[1] <= hours[0]} onChange={(v) => setHours([v, hours[1]])} label="von" /> <span className="text-subtle">–</span> <TimeSelect value={hours[1]} invalid={hours[1] <= hours[0]} onChange={(v) => setHours([hours[0], v])} label="bis" />
           </div>
         )}
+        {kind === 'hours' && hours[1] <= hours[0] && <p role="alert" className="text-[13px] text-danger">Das Ende muss nach dem Beginn liegen.</p>}
         <ErrorBox error={m.error} />
       </div>
     </Dialog>

@@ -98,7 +98,7 @@ function Editor({ t, placeholders, onClose }: { t: TemplateInfo; placeholders: s
       }
     >
       <div className="flex flex-col gap-5">
-        <Segmented size="sm" value={locale} onChange={setLocale} options={[{ value: 'de', label: 'Deutsch' }, { value: 'en', label: 'English' }]} />
+        <Segmented label="Sprache" size="sm" value={locale} onChange={setLocale} options={[{ value: 'de', label: 'Deutsch' }, { value: 'en', label: 'English' }]} />
         <div className="grid gap-5 md:grid-cols-2">
           <div className="flex flex-col gap-4">
             <Field label="Betreff" htmlFor="ms"><Input id="ms" value={v.subject} onFocus={() => (focused.current = 'subject')} onChange={(e) => setV({ ...v, subject: e.target.value })} /></Field>

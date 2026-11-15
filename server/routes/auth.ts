@@ -1,4 +1,4 @@
-import { zValidator } from '@hono/zod-validator'
+import { v } from '../lib/validate'
 import { Hono, type Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { z } from 'zod'
@@ -31,19 +31,19 @@ export const authRoutes = new Hono<Env>()
       pendingSecondFactor: !!session?.pendingSecondFactor,
     })
   })
-  .post('/setup', zValidator('json', setupSchema.extend({ setupToken: z.string().max(200).default('') })), async (c) => {
+  .post('/setup', v('json', setupSchema.extend({ setupToken: z.string().max(200).default('') })), async (c) => {
     if (!hit(`setup:${clientIp(c)}`, 10, 60 * 60_000)) throw new AppError('rate_limited', 'Zu viele Versuche.')
     const { setupToken, ...input } = c.req.valid('json')
     setSession(c, await auth.runSetup(input, setupToken, c.req.header('user-agent')))
     return c.json({ ok: true })
   })
-  .post('/login', zValidator('json', z.object({ email: z.string().max(254), password: z.string().max(200) })), async (c) => {
+  .post('/login', v('json', z.object({ email: z.string().max(254), password: z.string().max(200) })), async (c) => {
     const { email, password } = c.req.valid('json')
     const s = await auth.login(email, password, clientIp(c), c.req.header('user-agent'))
     setSession(c, s)
     return c.json({ needsSecondFactor: s.pendingSecondFactor })
   })
-  .post('/second-factor', zValidator('json', z.object({ code: z.string().min(6).max(10) })), async (c) => {
+  .post('/second-factor', v('json', z.object({ code: z.string().min(6).max(10) })), async (c) => {
     setSession(c, await auth.verifySecondFactor(getCookie(c, SESSION_COOKIE), c.req.valid('json').code, clientIp(c)))
     return c.json({ ok: true })
   })
@@ -56,7 +56,7 @@ export const authRoutes = new Hono<Env>()
     if (!hit(`pk:${clientIp(c)}`, 30, 15 * 60_000)) throw new AppError('rate_limited', 'Zu viele Versuche.')
     return c.json(await auth.passkeyLoginOptions())
   })
-  .post('/passkey/verify', zValidator('json', z.object({ challengeId: z.string().max(100), response: z.any() })), async (c) => {
+  .post('/passkey/verify', v('json', z.object({ challengeId: z.string().max(100), response: z.any() })), async (c) => {
     if (!hit(`pk:${clientIp(c)}`, 30, 15 * 60_000)) throw new AppError('rate_limited', 'Zu viele Versuche.')
     const { challengeId, response } = c.req.valid('json')
     setSession(c, await auth.passkeyLogin(challengeId, response, c.req.header('user-agent')))

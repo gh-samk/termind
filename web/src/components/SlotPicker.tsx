@@ -94,7 +94,7 @@ export function SlotPicker({ slotsUrl, onPick, confirmLabel, busy }: { slotsUrl:
                 aria-pressed={sel}
                 aria-label={`${fmtWeekday(d + 'T12:00:00Z', 'UTC', locale)}, ${fmtDayMonth(d + 'T12:00:00Z', 'UTC', locale)}`}
                 className={cn(
-                  'press relative mx-auto flex aspect-square w-full max-w-12 items-center justify-center rounded-xl text-[15px] tabular',
+                  'press relative mx-auto flex aspect-square w-full max-w-12 items-center justify-center rounded-xl text-[15px] tabular pointer-coarse:after:absolute pointer-coarse:after:-inset-[2px]',
                   available ? 'bg-accent-soft font-semibold text-accent-soft-fg hover:brightness-[0.97] dark:hover:brightness-110' : 'cursor-default text-subtle/70',
                   sel && 'bg-accent text-accent-fg hover:brightness-100',
                   q.isLoading && 'animate-pulse',
@@ -121,7 +121,7 @@ export function SlotPicker({ slotsUrl, onPick, confirmLabel, busy }: { slotsUrl:
               {tzOptions.map((z) => <option key={z} value={z}>{z.replace('_', ' ').replace('/', ' / ')}</option>)}
             </Select>
           </label>
-          <Segmented size="sm" value={h12} onChange={setH12} options={[{ value: '24', label: '24 h' }, { value: '12', label: '12 h' }]} />
+          <Segmented label="Zeitformat" size="sm" value={h12} onChange={setH12} options={[{ value: '24', label: '24 h' }, { value: '12', label: '12 h' }]} />
         </div>
       </section>
 

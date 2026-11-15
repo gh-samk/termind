@@ -6,10 +6,11 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { FieldType, FormField, LocationKind } from '@shared/types'
 import { LocationIcon } from '../components/LocationIcon'
 import { useAuth } from '../auth/useAuth'
-import { api } from '../lib/api'
+import { api, errorMessage } from '../lib/api'
 import { cn } from '../lib/cn'
+import { ACCENT_HUES } from '../lib/colors'
 import { fmtDuration } from '../lib/format'
-import { Badge, Button, Card, CopyButton, Dialog, Field, Input, SectionHeader, Segmented, Select, Switch, Textarea, toast } from '../ui'
+import { Badge, Button, Card, ConfirmDialog, CopyButton, Field, Input, SectionHeader, Segmented, Select, Switch, Textarea, toast, useRovingRadio } from '../ui'
 import { ErrorBox, PageHeader } from './AdminShell'
 import type { EventType } from './types'
 
@@ -24,6 +25,7 @@ export function Terminseiten() {
   const toggle = useMutation({
     mutationFn: (e: EventType) => api(`/api/event-types/${e.id}`, { method: 'PATCH', body: { active: !e.active } }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['event-types'] }),
+    onError: (e) => toast.error(errorMessage(e)),
   })
   const duplicate = useMutation({
     mutationFn: (e: EventType) => {
@@ -31,10 +33,12 @@ export function Terminseiten() {
       return api('/api/event-types', { body: { ...rest, title: `${e.title} (Kopie)`, scheduleId: e.scheduleId ?? undefined } })
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['event-types'] }); toast('Kopie angelegt') },
+    onError: (e) => toast.error(errorMessage(e)),
   })
   const remove = useMutation({
     mutationFn: (e: EventType) => api<{ archived: boolean }>(`/api/event-types/${e.id}`, { method: 'DELETE' }),
     onSuccess: (r) => { qc.invalidateQueries({ queryKey: ['event-types'] }); setDel(null); toast(r.archived ? 'Archiviert (es gibt Buchungen dazu)' : 'Gelöscht') },
+    onError: (e) => { setDel(null); toast.error(errorMessage(e)) },
   })
 
   return (
@@ -85,12 +89,14 @@ export function Terminseiten() {
           </li>
         ))}
       </ul>
-      <Dialog
+      <ConfirmDialog
         open={!!del}
         onOpenChange={(o) => !o && setDel(null)}
         title="Terminseite löschen?"
         description={del ? `„${del.title}“ ist danach nicht mehr buchbar. Gibt es schon Buchungen, wird sie archiviert statt gelöscht.` : undefined}
-        footer={<><Button variant="ghost" onClick={() => setDel(null)}>Behalten</Button><Button variant="danger" disabled={remove.isPending} onClick={() => del && remove.mutate(del)}>Löschen</Button></>}
+        cancelLabel="Behalten"
+        pending={remove.isPending}
+        onConfirm={() => del && remove.mutate(del)}
       />
     </>
   )
@@ -115,7 +121,6 @@ const locationOptions: { kind: LocationKind; title: string; short: string; hint:
 ]
 
 const durations = [15, 30, 45, 60, 90, 120]
-const hues = [172, 250, 290, 15, 60, 140, 330]
 
 const blank: Omit<EventType, 'id' | 'slug'> & { slug?: string } = {
   title: '',
@@ -161,6 +166,8 @@ export function TerminseiteEditor() {
       setEv(q.data)
     }
   }, [q.data])
+  const durationRoving = useRovingRadio(durations, ev.duration, (d) => set('duration', d))
+  const hueRoving = useRovingRadio(ACCENT_HUES.map((x) => x.h), ev.color, (h) => set('color', h))
   const set = <K extends keyof typeof blank>(k: K, v: (typeof blank)[K]) => setEv((e) => ({ ...e, [k]: v }))
 
   const save = useMutation({
@@ -209,9 +216,9 @@ export function TerminseiteEditor() {
                 </div>
               </Field>
               <Field label="Dauer">
-                <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Dauer">
+                <div ref={durationRoving.ref} onKeyDown={durationRoving.onKeyDown} className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Dauer">
                   {durations.map((d) => (
-                    <button type="button" key={d} role="radio" aria-checked={ev.duration === d} onClick={() => set('duration', d)} className={cn('press h-9 rounded-lg border px-3.5 text-sm font-medium tabular', ev.duration === d ? 'border-accent bg-accent-soft text-accent-soft-fg' : 'border-line bg-surface text-muted hover:border-line-strong hover:text-fg')}>
+                    <button type="button" key={d} role="radio" aria-checked={ev.duration === d} tabIndex={durationRoving.tabIndex(d)} onClick={() => set('duration', d)} className={cn('press h-9 rounded-lg pointer-coarse:h-11 border px-3.5 text-sm font-medium tabular', ev.duration === d ? 'border-accent bg-accent-soft text-accent-soft-fg' : 'border-line bg-surface text-muted hover:border-line-strong hover:text-fg')}>
                       {fmtDuration(d)}
                     </button>
                   ))}
@@ -224,9 +231,9 @@ export function TerminseiteEditor() {
                 <Textarea id="desc" value={ev.description} onChange={(e) => set('description', e.target.value)} />
               </Field>
               <Field label="Farbe">
-                <div className="flex gap-2" role="radiogroup" aria-label="Farbe">
-                  {hues.map((h) => (
-                    <button type="button" key={h} role="radio" aria-checked={ev.color === h} aria-label={`Farbton ${h}`} onClick={() => set('color', h)} className={cn('press size-7 rounded-full ring-offset-2 ring-offset-surface', ev.color === h && 'ring-2 ring-fg')} style={{ background: `oklch(0.7 0.11 ${h})` }} />
+                <div ref={hueRoving.ref} onKeyDown={hueRoving.onKeyDown} className="flex gap-2" role="radiogroup" aria-label="Farbe">
+                  {ACCENT_HUES.map(({ h, n }) => (
+                    <button type="button" key={h} role="radio" aria-checked={ev.color === h} tabIndex={hueRoving.tabIndex(h)} aria-label={n} title={n} onClick={() => set('color', h)} className={cn('press relative size-7 rounded-full ring-offset-2 ring-offset-surface pointer-coarse:after:absolute pointer-coarse:after:-inset-2', ev.color === h && 'ring-2 ring-fg')} style={{ background: `oklch(0.7 0.11 ${h})` }} />
                   ))}
                 </div>
               </Field>
@@ -249,7 +256,7 @@ export function TerminseiteEditor() {
               ))}
             </div>
             <div className="mt-4 grid gap-4 sm:grid-cols-[1fr_180px]">
-              {loc.kind === 'video-template' && <Field label="Link-Vorlage" htmlFor="lv" hint={<>Aus <code className="rounded bg-surface-2 px-1">{'{id}'}</code> wird pro Buchung ein eigener Raumname. Für kMeet z. B. https://kmeet.infomaniak.com/termind-{'{id}'}</>}><Input id="lv" required value={loc.value} onChange={(e) => set('location', { ...loc, value: e.target.value })} className="font-mono text-[13px]" /></Field>}
+              {loc.kind === 'video-template' && <Field label="Link-Vorlage" htmlFor="lv" help={<>Eine Vorlage für die Adresse deines Videoraums. Das Platzhalter-Stück <code className="rounded bg-surface-2 px-1">{'{id}'}</code> ersetzt termind bei jeder Buchung durch eine eigene Nummer, so hat jeder Termin seinen eigenen Raum.</>} hint={<>Aus <code className="rounded bg-surface-2 px-1">{'{id}'}</code> wird pro Buchung ein eigener Raumname. Für kMeet z. B. https://kmeet.infomaniak.com/termind-{'{id}'}</>}><Input id="lv" required value={loc.value} onChange={(e) => set('location', { ...loc, value: e.target.value })} className="font-mono text-[13px]" /></Field>}
               {loc.kind === 'video' && <Field label="Video-Link" htmlFor="lv"><Input id="lv" type="url" required placeholder="https://zoom.us/j/…" value={loc.value} onChange={(e) => set('location', { ...loc, value: e.target.value })} className="font-mono text-[13px]" /></Field>}
               {loc.kind === 'onsite' && <Field label="Adresse" htmlFor="lv"><Input id="lv" required value={loc.value} onChange={(e) => set('location', { ...loc, value: e.target.value })} /></Field>}
               {loc.kind === 'phone-guest-calls' && <Field label="Deine Telefonnummer" htmlFor="lv"><Input id="lv" type="tel" required value={loc.value} onChange={(e) => set('location', { ...loc, value: e.target.value })} /></Field>}
@@ -395,7 +402,7 @@ function EmbedCard({ path }: { path: string }) {
     <Card className="p-6">
       <SectionHeader title="Auf deiner Webseite einbetten" description="Code in deine Seite einfügen, fertig. Funktioniert mit WordPress, Webflow, Wix und jeder anderen Seite." />
       <div className="mt-5">
-        <Segmented size="sm" value={mode} onChange={setMode} options={[{ value: 'inline', label: 'Im Text' }, { value: 'popup', label: 'Als Button' }, { value: 'floating', label: 'Schwebend' }]} />
+        <Segmented label="Art der Einbettung" size="sm" value={mode} onChange={setMode} options={[{ value: 'inline', label: 'Im Text' }, { value: 'popup', label: 'Als Button' }, { value: 'floating', label: 'Schwebend' }]} />
       </div>
       <p className="mt-3 text-[13px] text-muted">
         {mode === 'inline' ? 'Der Kalender erscheint direkt auf der Seite, die Höhe passt sich an.' : mode === 'popup' ? 'Ein Klick auf deinen Button öffnet den Kalender als Fenster.' : 'Ein Button schwebt unten rechts auf jeder Seite.'}

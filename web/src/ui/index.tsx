@@ -1,7 +1,7 @@
 import * as RDialog from '@radix-ui/react-dialog'
 import * as RSwitch from '@radix-ui/react-switch'
-import { X, ChevronDown, Check, Copy } from 'lucide-react'
-import { forwardRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
+import { X, ChevronDown, Check, Copy, AlertTriangle, HelpCircle } from 'lucide-react'
+import { createContext, forwardRef, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type AriaAttributes, type ButtonHTMLAttributes, type InputHTMLAttributes, type KeyboardEvent, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
 import { cn } from '../lib/cn'
 
 /* ---------------- Button ---------------- */
@@ -16,10 +16,10 @@ const variants: Record<Variant, string> = {
   soft: 'bg-accent-soft text-accent-soft-fg hover:brightness-[0.98]',
 }
 const sizes: Record<Size, string> = {
-  sm: 'h-8 px-3 text-[13px] gap-1.5 rounded-lg',
-  md: 'h-10 px-4 text-sm gap-2 rounded-[10px]',
+  sm: 'h-8 px-3 text-[13px] gap-1.5 rounded-lg pointer-coarse:h-11',
+  md: 'h-10 px-4 text-sm gap-2 rounded-[10px] pointer-coarse:h-11',
   lg: 'h-12 px-5 text-[15px] gap-2 rounded-xl',
-  icon: 'h-9 w-9 rounded-lg justify-center',
+  icon: 'h-9 w-9 rounded-lg justify-center pointer-coarse:size-11',
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size }>(
@@ -42,19 +42,32 @@ Button.displayName = 'Button'
 const fieldBase =
   'w-full rounded-[10px] border border-line bg-surface px-3 text-[15px] text-fg placeholder:text-subtle shadow-xs transition-[border-color,box-shadow] duration-150 hover:border-line-strong focus:border-accent focus:outline-none focus:ring-3 focus:ring-accent/15'
 
+/* Field verknüpft Hinweis- und Fehlertext automatisch mit dem Eingabeelement, dessen id zu htmlFor passt. */
+const FieldCtx = createContext<{ htmlFor?: string; describedBy?: string; required?: boolean; invalid?: boolean }>({})
+
+export function useFieldProps(id: string | undefined, own: Pick<AriaAttributes, 'aria-describedby' | 'aria-required' | 'aria-invalid'>) {
+  const f = useContext(FieldCtx)
+  if (!id || f.htmlFor !== id) return {}
+  return {
+    'aria-describedby': [own['aria-describedby'], f.describedBy].filter(Boolean).join(' ') || undefined,
+    'aria-required': own['aria-required'] ?? (f.required ? true : undefined),
+    'aria-invalid': own['aria-invalid'] ?? (f.invalid ? true : undefined),
+  }
+}
+
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(({ className, ...p }, ref) => (
-  <input ref={ref} className={cn(fieldBase, 'h-10', className)} {...p} />
+  <input ref={ref} className={cn(fieldBase, 'h-10', className)} {...p} {...useFieldProps(p.id, p)} />
 ))
 Input.displayName = 'Input'
 
 export function Textarea({ className, ...p }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea className={cn(fieldBase, 'min-h-24 py-2.5 leading-relaxed', className)} {...p} />
+  return <textarea className={cn(fieldBase, 'min-h-24 py-2.5 leading-relaxed', className)} {...p} {...useFieldProps(p.id, p)} />
 }
 
 export function Select({ className, children, ...p }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <div className="relative">
-      <select className={cn(fieldBase, 'h-10 appearance-none pr-9', className)} {...p}>
+      <select className={cn(fieldBase, 'h-10 appearance-none pr-9', className)} {...p} {...useFieldProps(p.id, p)}>
         {children}
       </select>
       <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-subtle" />
@@ -62,15 +75,108 @@ export function Select({ className, children, ...p }: SelectHTMLAttributes<HTMLS
   )
 }
 
-export function Field({ label, hint, htmlFor, children, className }: { label: string; hint?: ReactNode; htmlFor?: string; children: ReactNode; className?: string }) {
+export function Field({
+  label,
+  hint,
+  error,
+  required,
+  help,
+  htmlFor,
+  children,
+  className,
+}: {
+  label: string
+  hint?: ReactNode
+  error?: ReactNode
+  /** Pflichtfeld: zeigt „Pflicht“ am Label und setzt aria-required */
+  required?: boolean
+  /** Kurze Erklärung hinter dem „?“-Knopf neben dem Label */
+  help?: ReactNode
+  htmlFor?: string
+  children: ReactNode
+  className?: string
+}) {
+  const uid = useId()
+  const hintId = hint ? `${uid}-hint` : undefined
+  const errId = error ? `${uid}-err` : undefined
+  const describedBy = [hintId, errId].filter(Boolean).join(' ') || undefined
   return (
-    <div className={cn('flex flex-col gap-1.5', className)}>
-      <label htmlFor={htmlFor} className="text-[13px] font-medium text-fg">
-        {label}
-      </label>
-      {children}
-      {hint && <p className="text-[13px] leading-snug text-muted">{hint}</p>}
-    </div>
+    <FieldCtx.Provider value={{ htmlFor, describedBy, required, invalid: !!error }}>
+      <div className={cn('flex flex-col gap-1.5', className)}>
+        <div className="flex items-center gap-1.5">
+          <label htmlFor={htmlFor} className="text-[13px] font-medium text-fg">
+            {label}
+            {required && <span className="ml-1.5 text-xs font-normal text-subtle">Pflicht</span>}
+          </label>
+          {help && <Hint label={label}>{help}</Hint>}
+        </div>
+        {children}
+        {hint && <p id={hintId} className="text-[13px] leading-snug text-muted">{hint}</p>}
+        {error && <p id={errId} role="alert" className="text-[13px] leading-snug text-danger">{error}</p>}
+      </div>
+    </FieldCtx.Provider>
+  )
+}
+
+/* ---------------- Hint: kleiner „?“-Knopf mit Erklärung ---------------- */
+export function Hint({ children, label }: { children: ReactNode; label: string }) {
+  const [open, setOpen] = useState(false)
+  const id = useId()
+  const wrap = useRef<HTMLSpanElement>(null)
+  const btn = useRef<HTMLButtonElement>(null)
+  const panel = useRef<HTMLSpanElement>(null)
+  const [shift, setShift] = useState(0)
+  // Panel nach dem Öffnen messen und mit 16 px Rand im Bild halten
+  useLayoutEffect(() => {
+    if (!open || !panel.current) return setShift(0)
+    const r = panel.current.getBoundingClientRect()
+    const base = r.left - shift
+    const vw = document.documentElement.clientWidth
+    let x = Math.min(0, vw - 16 - (base + r.width))
+    if (base + x < 16) x = 16 - base
+    setShift(x)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+  useEffect(() => {
+    if (!open) return
+    const away = (e: Event) => {
+      if (!wrap.current?.contains(e.target as Node)) setOpen(false)
+    }
+    // Escape auch dann, wenn der Fokus nach einem Tipp auf den Text beim body liegt
+    const esc = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const a = document.activeElement
+      if (a && a !== document.body && !wrap.current?.contains(a)) return
+      e.stopPropagation()
+      setOpen(false)
+      btn.current?.focus()
+    }
+    document.addEventListener('pointerdown', away)
+    document.addEventListener('keydown', esc)
+    return () => {
+      document.removeEventListener('pointerdown', away)
+      document.removeEventListener('keydown', esc)
+    }
+  }, [open])
+  return (
+    <span ref={wrap} className="relative inline-flex">
+      <button
+        ref={btn}
+        type="button"
+        aria-label={`Erklärung: ${label}`}
+        aria-expanded={open}
+        aria-controls={open ? id : undefined}
+        onClick={() => setOpen((o) => !o)}
+        className="press relative inline-flex size-5 items-center justify-center rounded-full text-subtle hover:text-fg pointer-coarse:after:absolute pointer-coarse:after:-inset-3 [&_svg]:size-4"
+      >
+        <HelpCircle aria-hidden />
+      </button>
+      {open && (
+        <span ref={panel} id={id} role="note" style={{ transform: `translateX(${shift}px)` }} className="enter absolute top-full left-0 z-40 mt-1.5 w-64 max-w-[calc(100vw-48px)] rounded-xl border border-line bg-surface p-3 text-[13px] leading-snug font-normal text-fg shadow-pop">
+          {children}
+        </span>
+      )}
+    </span>
   )
 }
 
@@ -82,7 +188,7 @@ export function Switch({ checked, onCheckedChange, label, id }: { checked: boole
       checked={checked}
       onCheckedChange={onCheckedChange}
       aria-label={label}
-      className="relative inline-flex h-6 w-10 shrink-0 items-center rounded-full bg-line-strong transition-colors duration-200 data-[state=checked]:bg-accent"
+      className="relative inline-flex h-6 w-10 shrink-0 items-center rounded-full bg-line-strong transition-colors duration-200 data-[state=checked]:bg-accent pointer-coarse:after:absolute pointer-coarse:after:-inset-x-1 pointer-coarse:after:-inset-y-2.5"
     >
       <RSwitch.Thumb className="block size-5 translate-x-0.5 rounded-full bg-white shadow-xs transition-transform duration-200 ease-out-strong data-[state=checked]:translate-x-[18px]" />
     </RSwitch.Root>
@@ -90,17 +196,37 @@ export function Switch({ checked, onCheckedChange, label, id }: { checked: boole
 }
 
 /* ---------------- Segmented ---------------- */
-export function Segmented<T extends string>({ value, onChange, options, className, size = 'md' }: { value: T; onChange: (v: T) => void; options: { value: T; label: ReactNode }[]; className?: string; size?: 'sm' | 'md' }) {
+/** Pfeiltasten-Bedienung für eine Gruppe von role="radio"-Knöpfen (Roving Tabindex). */
+export function useRovingRadio<T>(values: T[], value: T, onChange: (v: T) => void) {
+  const root = useRef<HTMLDivElement>(null)
+  const current = values.includes(value) ? value : values[0]
+  const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
+    const dir = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0
+    if (!dir) return
+    e.preventDefault()
+    const i = values.indexOf(current)
+    const next = (i + dir + values.length) % values.length
+    onChange(values[next])
+    // Fokus folgt der Auswahl, sobald React neu gerendert hat
+    requestAnimationFrame(() => root.current?.querySelectorAll<HTMLElement>('[role="radio"]')[next]?.focus())
+  }
+  return { ref: root, onKeyDown, tabIndex: (v: T) => (v === current ? 0 : -1) }
+}
+
+export function Segmented<T extends string>({ value, onChange, options, className, size = 'md', label }: { value: T; onChange: (v: T) => void; options: { value: T; label: ReactNode }[]; className?: string; size?: 'sm' | 'md'; label?: string }) {
+  const roving = useRovingRadio(options.map((o) => o.value), value, onChange)
   return (
-    <div role="tablist" className={cn('inline-flex rounded-[10px] bg-sunken p-0.5 ring-1 ring-line ring-inset', className)}>
+    <div ref={roving.ref} role="radiogroup" aria-label={label} onKeyDown={roving.onKeyDown} className={cn('inline-flex rounded-[10px] bg-sunken p-0.5 ring-1 ring-line ring-inset', className)}>
       {options.map((o) => (
         <button
           key={o.value}
-          role="tab"
-          aria-selected={value === o.value}
+          type="button"
+          role="radio"
+          aria-checked={value === o.value}
+          tabIndex={roving.tabIndex(o.value)}
           onClick={() => onChange(o.value)}
           className={cn(
-            'press inline-flex items-center gap-1.5 rounded-lg font-medium text-muted hover:text-fg',
+            'press inline-flex items-center gap-1.5 rounded-lg font-medium text-muted hover:text-fg pointer-coarse:h-11',
             size === 'sm' ? 'h-7 px-2.5 text-[13px]' : 'h-8 px-3 text-sm',
             value === o.value && 'bg-surface text-fg shadow-xs ring-1 ring-line',
           )}
@@ -183,12 +309,14 @@ export function CopyButton({ value, label = 'Link kopieren', size = 'sm', varian
 }
 
 /* ---------------- Dialog ---------------- */
-export function Dialog({ open, onOpenChange, title, description, children, footer, wide }: { open: boolean; onOpenChange: (o: boolean) => void; title: string; description?: ReactNode; children?: ReactNode; footer?: ReactNode; wide?: boolean }) {
+export function Dialog({ open, onOpenChange, title, description, children, footer, wide, onOpenAutoFocus }: { open: boolean; onOpenChange: (o: boolean) => void; title: string; description?: ReactNode; children?: ReactNode; footer?: ReactNode; wide?: boolean; onOpenAutoFocus?: (e: Event) => void }) {
   return (
     <RDialog.Root open={open} onOpenChange={onOpenChange}>
       <RDialog.Portal>
         <RDialog.Overlay className="overlay fixed inset-0 z-50 bg-black/30 backdrop-blur-[2px] dark:bg-black/55" />
         <RDialog.Content
+          onOpenAutoFocus={onOpenAutoFocus}
+          {...(description ? {} : { 'aria-describedby': undefined })}
           className={cn(
             'modal fixed top-1/2 left-1/2 z-50 max-h-[calc(100dvh-32px)] w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 overflow-auto rounded-2xl border border-line bg-surface shadow-pop focus:outline-none',
             wide ? 'max-w-2xl' : 'max-w-md',
@@ -236,26 +364,109 @@ export function Sheet({ open, onOpenChange, title, children, footer }: { open: b
   )
 }
 
-/* ---------------- Toast (minimal) ---------------- */
-let pushToast: ((msg: string) => void) | null = null
-export function toast(msg: string) {
-  pushToast?.(msg)
-}
-export function Toaster() {
-  const [items, setItems] = useState<{ id: number; msg: string }[]>([])
-  pushToast = (msg) => {
-    const id = Date.now()
-    setItems((i) => [...i, { id, msg }])
-    setTimeout(() => setItems((i) => i.filter((x) => x.id !== id)), 2600)
-  }
+/* ---------------- Bestätigungsdialog ---------------- */
+export function ConfirmDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  confirmLabel = 'Löschen',
+  cancelLabel = 'Abbrechen',
+  danger = true,
+  pending,
+  onConfirm,
+}: {
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  title: string
+  description?: ReactNode
+  confirmLabel?: string
+  cancelLabel?: string
+  danger?: boolean
+  pending?: boolean
+  onConfirm: () => void
+}) {
+  const cancel = useRef<HTMLButtonElement>(null)
   return (
-    <div aria-live="polite" className="pointer-events-none fixed bottom-24 left-1/2 z-[60] lg:bottom-5 flex -translate-x-1/2 flex-col items-center gap-2">
-      {items.map((t) => (
-        <div key={t.id} className="enter flex items-center gap-2 rounded-xl bg-fg px-4 py-2.5 text-sm font-medium text-bg shadow-pop">
-          <Check className="size-4" />
-          {t.msg}
-        </div>
-      ))}
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={title}
+      description={description}
+      // Fokus zuerst auf den harmlosen Knopf, damit Enter nichts löscht
+      onOpenAutoFocus={(e) => { e.preventDefault(); cancel.current?.focus() }}
+      footer={
+        <>
+          <Button ref={cancel} variant="ghost" onClick={() => onOpenChange(false)}>{cancelLabel}</Button>
+          <Button variant={danger ? 'danger' : 'primary'} disabled={pending} onClick={onConfirm}>{confirmLabel}</Button>
+        </>
+      }
+    />
+  )
+}
+
+/* ---------------- Toast ---------------- */
+interface ToastItem { id: number; msg: string; kind: 'ok' | 'error'; action?: { label: string; onClick: () => void } }
+interface ToastOptions { action?: { label: string; onClick: () => void }; duration?: number }
+let pushToast: ((t: Omit<ToastItem, 'id'>, duration?: number) => void) | null = null
+let toastId = 0
+
+/** Erfolgsmeldung. Mit `action` (z. B. „Rückgängig“) bleibt sie etwas länger stehen. */
+export function toast(msg: string, opts: ToastOptions = {}) {
+  pushToast?.({ msg, kind: 'ok', action: opts.action }, opts.duration ?? (opts.action ? 8000 : 2600))
+}
+/** Fehlermeldung: bleibt stehen, bis sie geschlossen wird. */
+toast.error = (msg: string) => pushToast?.({ msg, kind: 'error' })
+
+export function Toaster() {
+  const [items, setItems] = useState<ToastItem[]>([])
+  const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
+  const close = (id: number) => {
+    clearTimeout(timers.current.get(id))
+    timers.current.delete(id)
+    setItems((i) => i.filter((x) => x.id !== id))
+  }
+  useEffect(() => {
+    const active = timers.current
+    pushToast = (t, duration) => {
+      const id = ++toastId
+      // Höchstens 4 gleichzeitig: die ältesten weichen
+      setItems((i) => [...i, { ...t, id }].slice(-4))
+      if (duration) active.set(id, setTimeout(() => close(id), duration))
+    }
+    return () => {
+      pushToast = null
+      active.forEach(clearTimeout)
+      active.clear()
+    }
+  }, [])
+  return (
+    <div aria-live="polite" className="pointer-events-none fixed bottom-24 left-1/2 z-[60] flex w-[calc(100vw-32px)] max-w-md -translate-x-1/2 flex-col items-center gap-2 lg:bottom-5">
+      {items.map((t) =>
+        t.kind === 'error' ? (
+          <div key={t.id} role="alert" className="enter pointer-events-auto flex max-w-full items-start gap-2.5 rounded-xl border border-danger/30 bg-danger-soft py-2.5 pr-1.5 pl-4 text-sm font-medium text-danger-soft-fg shadow-pop">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <span className="min-w-0 flex-1 py-0.5">{t.msg}</span>
+            <Button variant="ghost" size="icon" aria-label="Meldung schließen" onClick={() => close(t.id)} className="-my-1 size-8 shrink-0 text-danger-soft-fg hover:text-danger-soft-fg [&_svg]:size-4">
+              <X />
+            </Button>
+          </div>
+        ) : (
+          <div key={t.id} className="enter pointer-events-auto flex max-w-full items-center gap-2 rounded-xl bg-fg px-4 py-2.5 text-sm font-medium text-bg shadow-pop">
+            <Check className="size-4 shrink-0" aria-hidden />
+            <span className="min-w-0">{t.msg}</span>
+            {t.action && (
+              <button
+                type="button"
+                onClick={() => { t.action!.onClick(); close(t.id) }}
+                className="press -my-1 -mr-2 ml-1 inline-flex h-8 shrink-0 items-center rounded-lg px-2.5 font-semibold underline underline-offset-2 hover:bg-bg/15 pointer-coarse:h-11"
+              >
+                {t.action.label}
+              </button>
+            )}
+          </div>
+        ),
+      )}
     </div>
   )
 }

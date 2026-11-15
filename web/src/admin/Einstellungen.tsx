@@ -2,12 +2,13 @@ import { startRegistration } from '@simplewebauthn/browser'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Bot, CalendarDays, Check, Fingerprint, KeyRound, Mail, Palette, Plus, RotateCw, Send, ShieldCheck, Webhook } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Navigate, NavLink, useParams } from 'react-router-dom'
+import { Navigate, NavLink, useNavigate, useParams } from 'react-router-dom'
 import { useAuth, useRefreshAuth } from '../auth/useAuth'
-import { api } from '../lib/api'
+import { api, errorMessage } from '../lib/api'
+import { ACCENT_HUES } from '../lib/colors'
 import { cn } from '../lib/cn'
 import { setAccentHue } from '../lib/theme'
-import { Avatar, Badge, Button, Card, CopyButton, Dialog, Field, Input, SectionHeader, Select, Switch, toast } from '../ui'
+import { Avatar, Badge, Button, Card, ConfirmDialog, CopyButton, Dialog, Field, Hint, Input, SectionHeader, Select, Switch, toast, useFieldProps } from '../ui'
 import { ErrorBox, PageHeader } from './AdminShell'
 import { KalenderSettings } from './Kalender'
 import { MailTexte } from './MailTexte'
@@ -16,27 +17,45 @@ import type { SettingsData } from './types'
 
 const sections = [
   { id: 'profil', label: 'Profil & Marke', icon: Palette },
-  { id: 'kalender', label: 'Kalender', icon: CalendarDays },
   { id: 'email', label: 'E-Mail', icon: Mail },
-  { id: 'ki', label: 'KI & MCP', icon: Bot },
-  { id: 'webhooks', label: 'Webhooks', icon: Webhook },
+  { id: 'kalender', label: 'Kalender', icon: CalendarDays },
   { id: 'datenschutz', label: 'Datenschutz', icon: ShieldCheck },
   { id: 'sicherheit', label: 'Anmeldung & Sicherheit', icon: KeyRound },
 ]
+/* Für die meisten nicht nötig: eigene Gruppe am Ende */
+const advanced = [
+  { id: 'ki', label: 'KI & MCP', icon: Bot },
+  { id: 'webhooks', label: 'Webhooks', icon: Webhook },
+]
+const allSections = [...sections, ...advanced]
 
 export function Einstellungen() {
   const { tab = 'profil' } = useParams()
-  if (!sections.some((s) => s.id === tab)) return <Navigate to="/admin/einstellungen/profil" replace />
+  const nav = useNavigate()
+  if (!allSections.some((s) => s.id === tab)) return <Navigate to="/admin/einstellungen/profil" replace />
+  const link = (s: (typeof sections)[number]) => (
+    <NavLink key={s.id} to={`/admin/einstellungen/${s.id}`} className={cn('press flex h-9 shrink-0 items-center gap-2.5 rounded-lg px-3 text-sm font-medium whitespace-nowrap text-muted hover:bg-surface-2 hover:text-fg', tab === s.id && 'bg-surface-2 text-fg')}>
+      <s.icon className="size-4 shrink-0" aria-hidden /> {s.label}
+    </NavLink>
+  )
   return (
     <>
       <PageHeader title="Einstellungen" />
       <div className="grid gap-8 xl:grid-cols-[200px_minmax(0,1fr)]">
-        <nav aria-label="Einstellungen" className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1 xl:mx-0 xl:flex-col xl:overflow-visible xl:px-0">
-          {sections.map((s) => (
-            <NavLink key={s.id} to={`/admin/einstellungen/${s.id}`} className={cn('press flex h-9 shrink-0 items-center gap-2.5 rounded-lg px-3 text-sm font-medium whitespace-nowrap text-muted hover:bg-surface-2 hover:text-fg', tab === s.id && 'bg-surface-2 text-fg')}>
-              <s.icon className="size-4 shrink-0" aria-hidden /> {s.label}
-            </NavLink>
-          ))}
+        <div className="sm:hidden">
+          <Select aria-label="Bereich der Einstellungen" value={tab} onChange={(e) => nav(`/admin/einstellungen/${e.target.value}`)}>
+            {sections.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+            <optgroup label="Erweitert">
+              {advanced.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+            </optgroup>
+          </Select>
+        </div>
+        <nav aria-label="Einstellungen" className="hidden flex-wrap items-center gap-1 sm:flex xl:flex-col xl:items-stretch xl:flex-nowrap">
+          {sections.map(link)}
+          <div role="group" aria-labelledby="adv-label" className="flex flex-wrap items-center gap-1 sm:ml-3 sm:border-l sm:border-line sm:pl-3 xl:ml-0 xl:mt-4 xl:flex-col xl:items-stretch xl:border-t xl:border-l-0 xl:pt-4 xl:pl-0">
+            <span id="adv-label" className="px-3 text-xs font-medium tracking-wide text-subtle uppercase xl:pb-1">Erweitert</span>
+            {advanced.map(link)}
+          </div>
         </nav>
         <div key={tab} className="enter min-w-0">
           {tab === 'profil' && <Profil />}
@@ -70,15 +89,11 @@ function Row({ title, hint, children }: { title: string; hint?: ReactNode; child
 
 /* ---------------- Profil & Marke ---------------- */
 
-const hues = [
-  { h: 172, n: 'Petrol' },
-  { h: 250, n: 'Blau' },
-  { h: 290, n: 'Violett' },
-  { h: 15, n: 'Ziegel' },
-  { h: 60, n: 'Bernstein' },
-  { h: 140, n: 'Grün' },
-  { h: 330, n: 'Beere' },
-]
+/** Eingabe für den eigenen Link-Namen, verknüpft Hinweis und Pflichtmarkierung des umgebenden Field. */
+function HandleInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const a11y = useFieldProps('ph', {})
+  return <input id="ph" required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={value} onChange={(e) => onChange(e.target.value.toLowerCase())} className="h-10 min-w-0 flex-1 rounded-[10px] bg-surface px-3 outline-none sm:rounded-l-none" {...a11y} />
+}
 
 function Profil() {
   const me = useAuth().data!.user!
@@ -102,6 +117,7 @@ function Profil() {
   const saveBrand = useMutation({
     mutationFn: (b: { accentHue?: number; instanceName?: string }) => api('/api/settings/branding', { method: 'PUT', body: b }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['settings'] }); qc.invalidateQueries({ queryKey: ['instance'] }) },
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   return (
@@ -111,12 +127,12 @@ function Profil() {
         <form className="mt-5" onSubmit={(e) => { e.preventDefault(); saveProfile.mutate() }}>
           <div className="flex items-center gap-4"><Avatar name={p.name || '?'} size={56} /></div>
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            <Field label="Name" htmlFor="pn"><Input id="pn" required value={p.name} onChange={(e) => setP({ ...p, name: e.target.value })} /></Field>
+            <Field label="Name" htmlFor="pn" required><Input id="pn" required value={p.name} onChange={(e) => setP({ ...p, name: e.target.value })} /></Field>
             <Field label="Untertitel" htmlFor="ps"><Input id="ps" placeholder="z. B. Beratung für Sichtbarkeit" value={p.subtitle} onChange={(e) => setP({ ...p, subtitle: e.target.value })} /></Field>
-            <Field label="Dein Link" htmlFor="ph" className="sm:col-span-2" hint="Achtung: Alte Links funktionieren nach einer Änderung nicht mehr.">
+            <Field label="Dein Link" htmlFor="ph" required className="sm:col-span-2" hint="Achtung: Alte Links funktionieren nach einer Änderung nicht mehr.">
               <div className="flex items-center rounded-[10px] border border-line bg-sunken text-[15px] shadow-xs focus-within:border-accent">
                 <span className="hidden pl-3 text-muted sm:inline">{location.host}/</span>
-                <input id="ph" required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={p.handle} onChange={(e) => setP({ ...p, handle: e.target.value.toLowerCase() })} className="h-10 min-w-0 flex-1 rounded-[10px] bg-surface px-3 outline-none sm:rounded-l-none" />
+                <HandleInput value={p.handle} onChange={(v) => setP({ ...p, handle: v })} />
               </div>
             </Field>
           </div>
@@ -128,7 +144,7 @@ function Profil() {
         <Card className="p-6">
           <SectionHeader title="Marke" description="Akzentfarbe für Buttons, freie Tage und Mails. Wird sofort übernommen." />
           <div className="mt-5 flex flex-wrap gap-3" role="radiogroup" aria-label="Akzentfarbe">
-            {hues.map((c) => {
+            {ACCENT_HUES.map((c) => {
               const sel = s.data!.branding.accentHue === c.h
               return (
                 <button key={c.h} role="radio" aria-checked={sel} aria-label={c.n} onClick={() => { setAccentHue(c.h); saveBrand.mutate({ accentHue: c.h }) }} className={cn('press flex size-11 items-center justify-center rounded-full ring-offset-2 ring-offset-surface', sel && 'ring-2 ring-fg')} style={{ background: `oklch(0.52 0.1 ${c.h})` }}>
@@ -138,7 +154,7 @@ function Profil() {
             })}
           </div>
           <form className="mt-6 flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); saveBrand.mutate({ instanceName }, { onSuccess: () => toast('Gespeichert') }) }}>
-            <Field label="Name der Instanz" htmlFor="in" hint="Absender in Mails und Name für Passkeys." className="min-w-[240px] flex-1"><Input id="in" required value={instanceName} onChange={(e) => setInstanceName(e.target.value)} /></Field>
+            <Field label="Firmen- oder Anzeigename" htmlFor="in" required hint="Erscheint als Absender in deinen Mails und bei der Passkey-Anmeldung." className="min-w-[240px] flex-1"><Input id="in" required value={instanceName} onChange={(e) => setInstanceName(e.target.value)} /></Field>
             <Button type="submit">Speichern</Button>
           </form>
         </Card>
@@ -167,9 +183,9 @@ function EMail() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['settings'] }); setF((x) => ({ ...x, password: '' })); toast('Gespeichert') },
   })
   const test = useMutation({ mutationFn: () => api('/api/settings/smtp/test', { body: { to: me.email } }), onSuccess: () => toast(`Testmail an ${me.email} gesendet`) })
-  const retry = useMutation({ mutationFn: () => api('/api/settings/mail/retry', { body: {} }), onSuccess: () => { qc.invalidateQueries({ queryKey: ['settings'] }); toast('Mails werden erneut gesendet') } })
+  const retry = useMutation({ mutationFn: () => api('/api/settings/mail/retry', { body: {} }), onSuccess: () => { qc.invalidateQueries({ queryKey: ['settings'] }); toast('Mails werden erneut gesendet') }, onError: (e) => toast.error(errorMessage(e)) })
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value })
-  if (me.role !== 'owner') return <p className="text-sm text-muted">Nur die Inhaberin oder der Inhaber der Instanz kann den Versand einrichten.</p>
+  if (me.role !== 'owner') return <p className="text-sm text-muted">Nur die Inhaberin oder der Inhaber von termind kann den Mail-Versand einrichten.</p>
   const mail = s.data?.mail
 
   return (
@@ -185,22 +201,22 @@ function EMail() {
         </div>
       )}
       <Card className="p-6">
-        <SectionHeader title="Versand (SMTP)" description="termind verschickt alle Mails über dein eigenes Postfach. Deine Domain bleibt der Absender." action={s.data?.smtp ? <Badge tone="ok"><Check className="size-3.5" /> Eingerichtet</Badge> : <Badge tone="warn">Fehlt noch</Badge>} />
+        <SectionHeader title="Mail-Versand über dein Postfach (SMTP)" description={<>termind verschickt alle Mails über dein eigenes Postfach, deine Adresse bleibt der Absender. <Hint label="SMTP">SMTP ist die Technik, mit der E-Mails verschickt werden. Die Angaben dazu findest du bei deinem Mail-Anbieter, meist unter „Postausgangsserver“ oder „SMTP“.</Hint></>} action={s.data?.smtp ? <Badge tone="ok"><Check className="size-3.5" /> Eingerichtet</Badge> : <Badge tone="warn">Fehlt noch</Badge>} />
         <form className="mt-5" onSubmit={(e) => { e.preventDefault(); save.mutate() }}>
           <div className="grid gap-4 sm:grid-cols-[1fr_120px]">
-            <Field label="Server" htmlFor="sh"><Input id="sh" required placeholder="z. B. smtp.mailbox.org" value={f.host} onChange={set('host')} /></Field>
-            <Field label="Port" htmlFor="sp"><Input id="sp" required type="number" value={f.port} onChange={set('port')} className="tabular" /></Field>
+            <Field label="Postausgangsserver" htmlFor="sh" required><Input id="sh" required placeholder="z. B. smtp.mailbox.org" value={f.host} onChange={set('host')} /></Field>
+            <Field label="Port" htmlFor="sp" required><Input id="sp" required type="number" value={f.port} onChange={set('port')} className="tabular" /></Field>
           </div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <Field label="Benutzer" htmlFor="su"><Input id="su" autoComplete="off" value={f.user} onChange={set('user')} /></Field>
-            <Field label="Verschlüsselung" htmlFor="ss">
-              <Select id="ss" value={f.security} onChange={set('security')}><option value="starttls">STARTTLS (Port 587)</option><option value="tls">SSL/TLS (Port 465)</option><option value="none">Keine</option></Select>
+            <Field label="Benutzername" htmlFor="su" hint="Oft ist das deine E-Mail-Adresse."><Input id="su" autoComplete="off" value={f.user} onChange={set('user')} /></Field>
+            <Field label="Verschlüsselung" htmlFor="ss" help="Fast alle Anbieter nutzen „Sicher verbinden (STARTTLS)“ mit Port 587 oder „Von Anfang an verschlüsselt (SSL/TLS)“ mit Port 465. Welche Variante passt, steht bei deinem Anbieter. „Unverschlüsselt“ solltest du nicht wählen.">
+              <Select id="ss" value={f.security} onChange={set('security')}><option value="starttls">Sicher verbinden (STARTTLS, meist Port 587)</option><option value="tls">Von Anfang an verschlüsselt (SSL/TLS, meist Port 465)</option><option value="none">Unverschlüsselt (nicht empfohlen)</option></Select>
             </Field>
             <Field label="Passwort" htmlFor="spw" className="sm:col-span-2" hint={s.data?.smtp?.hasPassword ? 'Gespeichert. Leer lassen, um es zu behalten.' : 'Wird verschlüsselt gespeichert.'}>
               <Input id="spw" type="password" autoComplete="new-password" value={f.password} onChange={set('password')} placeholder={s.data?.smtp?.hasPassword ? '••••••••••••' : ''} />
             </Field>
-            <Field label="Absendername" htmlFor="sn"><Input id="sn" required value={f.fromName} onChange={set('fromName')} /></Field>
-            <Field label="Absender-Adresse" htmlFor="sf"><Input id="sf" required type="email" placeholder="termine@deine-domain.de" value={f.fromEmail} onChange={set('fromEmail')} /></Field>
+            <Field label="Absendername" htmlFor="sn" required><Input id="sn" required value={f.fromName} onChange={set('fromName')} /></Field>
+            <Field label="Absender-Adresse" htmlFor="sf" required><Input id="sf" required type="email" placeholder="termine@deine-domain.de" value={f.fromEmail} onChange={set('fromEmail')} /></Field>
             <Field label="Antworten an (optional)" htmlFor="sr" className="sm:col-span-2"><Input id="sr" type="email" value={f.replyTo} onChange={set('replyTo')} /></Field>
           </div>
           <div className="mt-5 flex flex-col gap-3"><ErrorBox error={save.error ?? test.error} /></div>
@@ -233,7 +249,12 @@ function KI() {
     mutationFn: () => api<{ token: string }>('/api/tokens', { body: { name, scope } }),
     onSuccess: (r) => { setCreated(r.token); qc.invalidateQueries({ queryKey: ['tokens'] }) },
   })
-  const revoke = useMutation({ mutationFn: (id: string) => api(`/api/tokens/${id}`, { method: 'DELETE' }), onSuccess: () => { qc.invalidateQueries({ queryKey: ['tokens'] }); toast('Zugang entzogen') } })
+  const [revokeTok, setRevokeTok] = useState<Token | null>(null)
+  const revoke = useMutation({
+    mutationFn: (id: string) => api(`/api/tokens/${id}`, { method: 'DELETE' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['tokens'] }); setRevokeTok(null); toast('Zugang entzogen') },
+    onError: (e) => { setRevokeTok(null); toast.error(errorMessage(e)) },
+  })
   const mcpUrl = `${location.origin}/mcp`
   const aiLog = (log.data ?? []).filter((l) => l.actorType === 'token')
 
@@ -241,7 +262,7 @@ function KI() {
     <div className="flex flex-col gap-6">
       <Card className="overflow-hidden">
         <div className="p-6">
-          <SectionHeader title="Mit einer KI verbinden" description="Füge diese Adresse in deinem KI-Assistenten (Web, App oder ChatGPT) als eigenen Connector hinzu. Die Anmeldung bestätigst du einmal hier im Browser. Für Skripte und n8n nimmst du einen API-Schlüssel." />
+          <SectionHeader title="Mit einem KI-Assistenten verbinden" description={<>Füge diese Adresse in deinem KI-Assistenten als eigenen Connector hinzu. Die Anmeldung bestätigst du einmal hier im Browser. <Hint label="Connector, OAuth und MCP">Ein Connector ist eine Verbindung, über die ein KI-Assistent auf termind zugreifen darf. „MCP“ ist der Standard dafür, „OAuth“ die sichere Anmeldung dabei: Du gibst kein Passwort weiter und kannst den Zugang jederzeit entziehen.</Hint></>} />
           <div className="mt-5 flex flex-wrap items-center gap-2">
             <code className="flex h-10 min-w-0 flex-1 items-center truncate rounded-[10px] border border-line bg-sunken px-3 font-mono text-[13px]">{mcpUrl}</code>
             <CopyButton value={mcpUrl} label="Kopieren" size="md" />
@@ -266,10 +287,10 @@ function KI() {
 
       <Card>
         <div className="flex items-center justify-between gap-4 border-b border-line px-6 py-4">
-          <SectionHeader title="API-Schlüssel" />
+          <SectionHeader title="API-Schlüssel" description={<>Zugang für eigene Skripte und Automatisierungen. <Hint label="API-Schlüssel">Ein API-Schlüssel ist wie ein Passwort für ein Programm. Wer ihn kennt, darf damit auf termind zugreifen, gib ihn deshalb nicht weiter.</Hint></>} />
           <Button size="sm" variant="primary" onClick={() => { setName(''); setCreated(null); setOpen(true) }}><Plus /> Neuer Schlüssel</Button>
         </div>
-        {tokens.data?.length === 0 && <p className="px-6 py-6 text-sm text-muted">Noch kein Schlüssel. Ohne Schlüssel hat keine KI Zugriff.</p>}
+        {tokens.data?.length === 0 && <p className="px-6 py-6 text-sm text-muted">Für eigene Skripte. KI-Assistenten verbindest du oben ohne Schlüssel.</p>}
         <ul className="divide-y divide-line">
           {tokens.data?.map((t) => (
             <li key={t.id} className="flex flex-wrap items-center gap-3 px-6 py-3.5">
@@ -279,7 +300,7 @@ function KI() {
                 <p className="text-[13px] text-muted"><code className="font-mono">{t.prefix}…</code> · {t.lastUsedAt ? `zuletzt aktiv ${new Date(t.lastUsedAt).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}` : 'noch nie benutzt'}</p>
               </div>
               <Badge tone={t.scope === 'read' ? 'neutral' : 'accent'}>{t.scope === 'read' ? 'Nur lesen' : 'Verwalten'}</Badge>
-              <Button size="sm" variant="ghost" className="text-danger hover:bg-danger-soft hover:text-danger" onClick={() => revoke.mutate(t.id)}>Entziehen</Button>
+              <Button size="sm" variant="ghost" className="text-danger hover:bg-danger-soft hover:text-danger" onClick={() => setRevokeTok(t)}>Entziehen</Button>
             </li>
           ))}
         </ul>
@@ -288,10 +309,10 @@ function KI() {
       {me.role === 'owner' && (
         <Card>
           <div className="border-b border-line px-6 py-4">
-            <SectionHeader title="KI-Protokoll" description="Alles, was ein Assistent in deinem Namen gelesen oder getan hat." />
+            <SectionHeader title="Protokoll der Assistenten" description="Alles, was ein KI-Assistent in deinem Namen gelesen oder getan hat." />
           </div>
           {aiLog.length === 0 ? (
-            <p className="px-6 py-6 text-sm text-muted">Noch keine KI-Aktivität.</p>
+            <p className="px-6 py-6 text-sm text-muted">Noch keine Aktivität eines Assistenten.</p>
           ) : (
             <ol className="px-6 py-2">
               {aiLog.slice(0, 50).map((l) => (
@@ -308,6 +329,17 @@ function KI() {
           )}
         </Card>
       )}
+
+      <ConfirmDialog
+        open={!!revokeTok}
+        onOpenChange={(o) => !o && setRevokeTok(null)}
+        title="API-Schlüssel entziehen?"
+        description={revokeTok ? `Programme, die den Schlüssel „${revokeTok.name}“ nutzen, haben danach keinen Zugriff mehr auf termind. Das lässt sich nicht rückgängig machen, du kannst aber einen neuen Schlüssel anlegen.` : undefined}
+        confirmLabel="Entziehen"
+        cancelLabel="Behalten"
+        pending={revoke.isPending}
+        onConfirm={() => revokeTok && revoke.mutate(revokeTok.id)}
+      />
 
       <Dialog
         open={open}
@@ -327,7 +359,7 @@ function KI() {
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            <Field label="Name" htmlFor="tn" hint="Damit du später weißt, wofür er ist."><Input id="tn" autoFocus placeholder="z. B. Desktop-Client" value={name} onChange={(e) => setName(e.target.value)} /></Field>
+            <Field label="Name" htmlFor="tn" required hint="Damit du später weißt, wofür er ist."><Input id="tn" autoFocus placeholder="z. B. Desktop-Client" value={name} onChange={(e) => setName(e.target.value)} /></Field>
             <Field label="Rechte" htmlFor="tr">
               <Select id="tr" value={scope} onChange={(e) => setScope(e.target.value as 'read' | 'write')}>
                 <option value="write">Verwalten (Gast-Mails und Löschen nur mit Rückfrage)</option>
@@ -345,11 +377,16 @@ function KI() {
 function Grants() {
   const qc = useQueryClient()
   const q = useQuery({ queryKey: ['grants'], queryFn: () => api<{ id: string; clientName: string; scope: 'read' | 'write'; lastUsedAt: string | null; createdAt: string }[]>('/api/oauth/grants') })
-  const revoke = useMutation({ mutationFn: (id: string) => api(`/api/oauth/grants/${id}`, { method: 'DELETE' }), onSuccess: () => { qc.invalidateQueries({ queryKey: ['grants'] }); toast('Zugang entzogen') } })
+  const [target, setTarget] = useState<{ id: string; clientName: string } | null>(null)
+  const revoke = useMutation({
+    mutationFn: (id: string) => api(`/api/oauth/grants/${id}`, { method: 'DELETE' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['grants'] }); setTarget(null); toast('Zugang entzogen') },
+    onError: (e) => { setTarget(null); toast.error(errorMessage(e)) },
+  })
   if (!q.data?.length) return null
   return (
     <Card>
-      <div className="border-b border-line px-6 py-4"><SectionHeader title="Verbundene Assistenten" description="Über OAuth angemeldet. Zugänge erneuern sich automatisch, bis du sie entziehst." /></div>
+      <div className="border-b border-line px-6 py-4"><SectionHeader title="Verbundene Assistenten" description="Diese KI-Assistenten hast du per Anmeldung (OAuth) verbunden. Der Zugang bleibt bestehen, bis du ihn entziehst." /></div>
       <ul className="divide-y divide-line">
         {q.data.map((g) => (
           <li key={g.id} className="flex flex-wrap items-center gap-3 px-6 py-3.5">
@@ -359,10 +396,20 @@ function Grants() {
               <p className="text-[13px] text-muted">{g.lastUsedAt ? `zuletzt aktiv ${new Date(g.lastUsedAt).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}` : `verbunden ${new Date(g.createdAt).toLocaleDateString('de-DE')}`}</p>
             </div>
             <Badge tone={g.scope === 'read' ? 'neutral' : 'accent'}>{g.scope === 'read' ? 'Nur lesen' : 'Verwalten'}</Badge>
-            <Button size="sm" variant="ghost" className="text-danger hover:bg-danger-soft hover:text-danger" onClick={() => revoke.mutate(g.id)}>Entziehen</Button>
+            <Button size="sm" variant="ghost" className="text-danger hover:bg-danger-soft hover:text-danger" onClick={() => setTarget(g)}>Entziehen</Button>
           </li>
         ))}
       </ul>
+      <ConfirmDialog
+        open={!!target}
+        onOpenChange={(o) => !o && setTarget(null)}
+        title="Assistenten entziehen?"
+        description={target ? `„${target.clientName}“ kann danach nichts mehr in termind lesen oder ändern. Du kannst den Assistenten später wieder neu verbinden.` : undefined}
+        confirmLabel="Entziehen"
+        cancelLabel="Behalten"
+        pending={revoke.isPending}
+        onConfirm={() => target && revoke.mutate(target.id)}
+      />
     </Card>
   )
 }
@@ -425,7 +472,17 @@ function Sicherheit() {
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['passkeys'] }); toast('Passkey hinzugefügt') },
   })
-  const delKey = useMutation({ mutationFn: (id: string) => api(`/api/passkeys/${id}`, { method: 'DELETE' }), onSuccess: () => qc.invalidateQueries({ queryKey: ['passkeys'] }) })
+  const [removeKey, setRemoveKey] = useState<Passkey | null>(null)
+  const delKey = useMutation({
+    mutationFn: (id: string) => api(`/api/passkeys/${id}`, { method: 'DELETE' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['passkeys'] }); setRemoveKey(null); toast('Passkey entfernt') },
+    onError: (e) => { setRemoveKey(null); toast.error(errorMessage(e)) },
+  })
+  const logoutOthers = useMutation({
+    mutationFn: () => api('/api/security/logout-others', { body: {} }),
+    onSuccess: () => toast('Andere Sitzungen beendet'),
+    onError: (e) => toast.error(errorMessage(e)),
+  })
   const [pwOpen, setPwOpen] = useState(false)
   const [totpOpen, setTotpOpen] = useState(false)
   const [offOpen, setOffOpen] = useState(false)
@@ -447,7 +504,7 @@ function Sicherheit() {
                 <p className="text-sm font-medium">{p.name}</p>
                 <p className="text-[13px] text-muted">{p.lastUsedAt ? `zuletzt benutzt ${new Date(p.lastUsedAt).toLocaleDateString('de-DE')}` : `angelegt ${new Date(p.createdAt).toLocaleDateString('de-DE')}`}</p>
               </div>
-              <Button size="sm" variant="ghost" onClick={() => delKey.mutate(p.id)}>Entfernen</Button>
+              <Button size="sm" variant="ghost" onClick={() => setRemoveKey(p)}>Entfernen</Button>
             </li>
           ))}
         </ul>
@@ -455,7 +512,7 @@ function Sicherheit() {
       <Card className="divide-y divide-line px-6 py-5">
         <Row title="Passwort" hint="Beim Ändern werden alle anderen Sitzungen beendet."><Button size="sm" onClick={() => setPwOpen(true)}>Ändern</Button></Row>
         <Row title="Andere Geräte abmelden" hint="Beendet alle Sitzungen außer dieser, z. B. nach Verlust eines Geräts.">
-          <Button size="sm" onClick={() => api('/api/security/logout-others', { body: {} }).then(() => toast('Andere Sitzungen beendet'))}>Abmelden</Button>
+          <Button size="sm" disabled={logoutOthers.isPending} onClick={() => logoutOthers.mutate()}>Abmelden</Button>
         </Row>
         <Row title="Zwei-Faktor-Anmeldung" hint="Code aus einer Authenticator-App zusätzlich zum Passwort.">
           {me.totpEnabled ? (
@@ -465,6 +522,16 @@ function Sicherheit() {
           )}
         </Row>
       </Card>
+      <ConfirmDialog
+        open={!!removeKey}
+        onOpenChange={(o) => !o && setRemoveKey(null)}
+        title="Passkey entfernen?"
+        description={removeKey ? `Mit „${removeKey.name}“ kannst du dich danach nicht mehr anmelden. Dein Passwort und andere Passkeys bleiben gültig.` : undefined}
+        confirmLabel="Entfernen"
+        cancelLabel="Behalten"
+        pending={delKey.isPending}
+        onConfirm={() => removeKey && delKey.mutate(removeKey.id)}
+      />
       <PasswordDialog open={pwOpen} onOpenChange={setPwOpen} />
       <TotpDialog open={totpOpen} onOpenChange={setTotpOpen} onDone={refresh} />
       <TotpOffDialog open={offOpen} onOpenChange={setOffOpen} onDone={refresh} />

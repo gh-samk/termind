@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Download, Plus, Send, Trash2, Webhook, X } from 'lucide-react'
 import { useState } from 'react'
-import { api } from '../lib/api'
+import { api, errorMessage } from '../lib/api'
 import { cn } from '../lib/cn'
-import { Badge, Button, Card, CopyButton, Dialog, Field, Input, SectionHeader, Select, Switch, toast } from '../ui'
+import { Badge, Button, Card, ConfirmDialog, CopyButton, Dialog, Field, Hint, Input, SectionHeader, Select, Switch, toast } from '../ui'
 import { ErrorBox } from './AdminShell'
 
 const EVENTS = [
@@ -29,17 +29,23 @@ export function WebhooksSettings() {
   const [open, setOpen] = useState(false)
   const [log, setLog] = useState<Hook | null>(null)
   const inv = () => qc.invalidateQueries({ queryKey: ['webhooks'] })
-  const patch = useMutation({ mutationFn: ({ id, body }: { id: string; body: object }) => api(`/api/webhooks/${id}`, { method: 'PATCH', body }), onSuccess: inv })
-  const del = useMutation({ mutationFn: (id: string) => api(`/api/webhooks/${id}`, { method: 'DELETE' }), onSuccess: () => { inv(); toast('Webhook gelöscht') } })
+  const [remove, setRemove] = useState<Hook | null>(null)
+  const patch = useMutation({ mutationFn: ({ id, body }: { id: string; body: object }) => api(`/api/webhooks/${id}`, { method: 'PATCH', body }), onSuccess: inv, onError: (e) => toast.error(errorMessage(e)) })
+  const del = useMutation({
+    mutationFn: (id: string) => api(`/api/webhooks/${id}`, { method: 'DELETE' }),
+    onSuccess: () => { inv(); setRemove(null); toast('Webhook gelöscht') },
+    onError: (e) => { setRemove(null); toast.error(errorMessage(e)) },
+  })
   const test = useMutation({
     mutationFn: (id: string) => api<{ ok: boolean; statusCode?: number; error?: string }>(`/api/webhooks/${id}/test`, { body: {} }),
-    onSuccess: (r) => { inv(); toast(r.ok ? `Test zugestellt (HTTP ${r.statusCode})` : `Test fehlgeschlagen: ${r.error}`) },
+    onSuccess: (r) => { inv(); if (r.ok) toast(`Test zugestellt (HTTP ${r.statusCode})`); else toast.error(`Test fehlgeschlagen: ${r.error}`) },
+    onError: (e) => toast.error(errorMessage(e)),
   })
   return (
     <div className="flex flex-col gap-6">
       <Card>
         <div className="flex items-center justify-between gap-4 border-b border-line px-6 py-4">
-          <SectionHeader title="Webhooks" description="Bei jedem Ereignis eine signierte Nachricht an deine Automatisierung (n8n, Make, Zapier, eigene Server)." />
+          <SectionHeader title="Webhooks" description={<>Bei jedem Ereignis (z. B. neue Buchung) schickt termind automatisch eine Nachricht an ein anderes Programm, etwa n8n, Make oder Zapier. <Hint label="Webhooks">Ein Webhook ist eine Internet-Adresse, die von termind „angeklopft“ wird, sobald etwas passiert. So kannst du Buchungen automatisch weiterverarbeiten, z. B. in eine Tabelle eintragen. Du brauchst das nur, wenn du solche Programme nutzt.</Hint></>} />
           <Button size="sm" variant="primary" onClick={() => setOpen(true)}><Plus /> Webhook</Button>
         </div>
         {q.data?.length === 0 && <p className="px-6 py-6 text-sm text-muted">Noch kein Webhook angelegt.</p>}
@@ -60,19 +66,31 @@ export function WebhooksSettings() {
                 </button>
                 <Switch label="Aktiv" checked={w.active} onCheckedChange={(v) => patch.mutate({ id: w.id, body: { active: v } })} />
                 <Button size="sm" variant="ghost" disabled={test.isPending} onClick={() => test.mutate(w.id)}><Send /> Testen</Button>
-                <Button size="icon" variant="ghost" aria-label="Webhook löschen" onClick={() => del.mutate(w.id)}><Trash2 /></Button>
+                <Button size="icon" variant="ghost" aria-label="Webhook löschen" onClick={() => setRemove(w)}><Trash2 /></Button>
               </li>
             )
           })}
         </ul>
       </Card>
       <Card className="p-6">
-        <SectionHeader title="Signatur prüfen" description="Jede Nachricht enthält die Header X-Termind-Timestamp und X-Termind-Signature. So prüfst du sie (Node.js):" />
+        <details className="group">
+          <summary className="cursor-pointer text-[15px] font-semibold text-fg">Für Entwickler: Echtheit der Nachrichten prüfen</summary>
+          <p className="mt-2 text-sm text-muted">Jede Nachricht enthält die Header X-Termind-Timestamp und X-Termind-Signature. So prüfst du sie (Node.js):</p>
         <pre className="mt-4 overflow-x-auto rounded-xl bg-sunken p-4 font-mono text-[12px] leading-relaxed ring-1 ring-line ring-inset">{`const expected = 'sha256=' + crypto.createHmac('sha256', SECRET)
   .update(req.headers['x-termind-timestamp'] + '.' + rawBody).digest('hex')
 const sig = Buffer.from(String(req.headers['x-termind-signature'] ?? ''))
 const ok = sig.length === Buffer.byteLength(expected) && crypto.timingSafeEqual(Buffer.from(expected), sig)`}</pre>
+        </details>
       </Card>
+      <ConfirmDialog
+        open={!!remove}
+        onOpenChange={(o) => !o && setRemove(null)}
+        title="Webhook löschen?"
+        description={remove ? `Das angebundene Programm unter ${remove.url} erhält dann keine Nachrichten mehr von termind.` : undefined}
+        cancelLabel="Behalten"
+        pending={del.isPending}
+        onConfirm={() => remove && del.mutate(remove.id)}
+      />
       <AddWebhook open={open} onOpenChange={setOpen} />
       <Dialog open={!!log} onOpenChange={(o) => !o && setLog(null)} title="Letzte Zustellungen" wide>
         <ul className="flex flex-col divide-y divide-line text-sm">
@@ -119,9 +137,9 @@ function AddWebhook({ open, onOpenChange }: { open: boolean; onOpenChange: (o: b
         </div>
       ) : (
         <div className="flex flex-col gap-4">
-          <Field label="Ziel-Adresse" htmlFor="wu" hint="Muss mit https:// beginnen."><Input id="wu" type="url" placeholder="https://n8n.example.de/webhook/termind" value={url} onChange={(e) => setUrl(e.target.value)} className="font-mono text-[13px]" /></Field>
+          <Field label="Ziel-Adresse" htmlFor="wu" required hint="Muss mit https:// beginnen. Diese Adresse bekommst du von dem Programm, das die Nachrichten empfangen soll."><Input id="wu" type="url" placeholder="https://n8n.example.de/webhook/termind" value={url} onChange={(e) => setUrl(e.target.value)} className="font-mono text-[13px]" /></Field>
           <fieldset>
-            <legend className="mb-2 text-[13px] font-medium">Ereignisse</legend>
+            <legend className="mb-2 text-[13px] font-medium">Wann soll eine Nachricht gesendet werden?</legend>
             <div className="grid grid-cols-2 gap-2">
               {EVENTS.map((e) => (
                 <label key={e.id} className="flex items-center gap-2 text-sm">
@@ -142,7 +160,7 @@ function AddWebhook({ open, onOpenChange }: { open: boolean; onOpenChange: (o: b
 export function PrivacyTools() {
   const qc = useQueryClient()
   const s = useQuery({ queryKey: ['privacy'], queryFn: () => api<{ retentionMonths: number }>('/api/privacy') })
-  const setRet = useMutation({ mutationFn: (m: number) => api('/api/privacy', { method: 'PUT', body: { retentionMonths: m } }), onSuccess: () => { qc.invalidateQueries({ queryKey: ['privacy'] }); toast('Gespeichert') } })
+  const setRet = useMutation({ mutationFn: (m: number) => api('/api/privacy', { method: 'PUT', body: { retentionMonths: m } }), onSuccess: () => { qc.invalidateQueries({ queryKey: ['privacy'] }); toast('Gespeichert') }, onError: (e) => toast.error(errorMessage(e)) })
   const [email, setEmail] = useState('')
   const [confirm, setConfirm] = useState(false)
   const exp = useMutation({
