@@ -1,0 +1,518 @@
+import { startRegistration } from '@simplewebauthn/browser'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { AlertTriangle, Bot, CalendarDays, Check, Fingerprint, KeyRound, Mail, Palette, Plus, RotateCw, Send, ShieldCheck, Webhook } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Navigate, NavLink, useParams } from 'react-router-dom'
+import { useAuth, useRefreshAuth } from '../auth/useAuth'
+import { api } from '../lib/api'
+import { cn } from '../lib/cn'
+import { setAccentHue } from '../lib/theme'
+import { Avatar, Badge, Button, Card, CopyButton, Dialog, Field, Input, SectionHeader, Select, Switch, toast } from '../ui'
+import { ErrorBox, PageHeader } from './AdminShell'
+import { KalenderSettings } from './Kalender'
+import { MailTexte } from './MailTexte'
+import { PrivacyTools, WebhooksSettings } from './WebhooksPrivacy'
+import type { SettingsData } from './types'
+
+const sections = [
+  { id: 'profil', label: 'Profil & Marke', icon: Palette },
+  { id: 'kalender', label: 'Kalender', icon: CalendarDays },
+  { id: 'email', label: 'E-Mail', icon: Mail },
+  { id: 'ki', label: 'KI & MCP', icon: Bot },
+  { id: 'webhooks', label: 'Webhooks', icon: Webhook },
+  { id: 'datenschutz', label: 'Datenschutz', icon: ShieldCheck },
+  { id: 'sicherheit', label: 'Anmeldung & Sicherheit', icon: KeyRound },
+]
+
+export function Einstellungen() {
+  const { tab = 'profil' } = useParams()
+  if (!sections.some((s) => s.id === tab)) return <Navigate to="/admin/einstellungen/profil" replace />
+  return (
+    <>
+      <PageHeader title="Einstellungen" />
+      <div className="grid gap-8 xl:grid-cols-[200px_minmax(0,1fr)]">
+        <nav aria-label="Einstellungen" className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1 xl:mx-0 xl:flex-col xl:overflow-visible xl:px-0">
+          {sections.map((s) => (
+            <NavLink key={s.id} to={`/admin/einstellungen/${s.id}`} className={cn('press flex h-9 shrink-0 items-center gap-2.5 rounded-lg px-3 text-sm font-medium whitespace-nowrap text-muted hover:bg-surface-2 hover:text-fg', tab === s.id && 'bg-surface-2 text-fg')}>
+              <s.icon className="size-4 shrink-0" aria-hidden /> {s.label}
+            </NavLink>
+          ))}
+        </nav>
+        <div key={tab} className="enter min-w-0">
+          {tab === 'profil' && <Profil />}
+          {tab === 'kalender' && <KalenderSettings />}
+          {tab === 'email' && <EMail />}
+          {tab === 'ki' && <KI />}
+          {tab === 'webhooks' && <WebhooksSettings />}
+          {tab === 'datenschutz' && <Datenschutz />}
+          {tab === 'sicherheit' && <Sicherheit />}
+        </div>
+      </div>
+    </>
+  )
+}
+
+function useSettings() {
+  return useQuery({ queryKey: ['settings'], queryFn: () => api<SettingsData>('/api/settings') })
+}
+
+function Row({ title, hint, children }: { title: string; hint?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-3 py-5 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-8">
+      <div className="max-w-[46ch]">
+        <p className="text-sm font-medium">{title}</p>
+        {hint && <p className="mt-0.5 text-sm text-muted">{hint}</p>}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  )
+}
+
+/* ---------------- Profil & Marke ---------------- */
+
+const hues = [
+  { h: 172, n: 'Petrol' },
+  { h: 250, n: 'Blau' },
+  { h: 290, n: 'Violett' },
+  { h: 15, n: 'Ziegel' },
+  { h: 60, n: 'Bernstein' },
+  { h: 140, n: 'Grün' },
+  { h: 330, n: 'Beere' },
+]
+
+function Profil() {
+  const me = useAuth().data!.user!
+  const refresh = useRefreshAuth()
+  const qc = useQueryClient()
+  const s = useSettings()
+  const [p, setP] = useState({ name: me.name, subtitle: me.subtitle, handle: me.handle, timezone: me.timezone })
+  const [instanceName, setInstanceName] = useState('')
+  const brandLoaded = useRef(false)
+  useEffect(() => {
+    if (s.data && !brandLoaded.current) {
+      brandLoaded.current = true
+      setInstanceName(s.data.branding.instanceName)
+    }
+  }, [s.data])
+
+  const saveProfile = useMutation({
+    mutationFn: () => api('/api/me', { method: 'PATCH', body: p }),
+    onSuccess: () => { refresh(); toast('Profil gespeichert') },
+  })
+  const saveBrand = useMutation({
+    mutationFn: (b: { accentHue?: number; instanceName?: string }) => api('/api/settings/branding', { method: 'PUT', body: b }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['settings'] }); qc.invalidateQueries({ queryKey: ['instance'] }) },
+  })
+
+  return (
+    <div className="flex flex-col gap-6">
+      <Card className="p-6">
+        <SectionHeader title="Profil" description="So erscheinst du auf deinen Buchungsseiten." />
+        <form className="mt-5" onSubmit={(e) => { e.preventDefault(); saveProfile.mutate() }}>
+          <div className="flex items-center gap-4"><Avatar name={p.name || '?'} size={56} /></div>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <Field label="Name" htmlFor="pn"><Input id="pn" required value={p.name} onChange={(e) => setP({ ...p, name: e.target.value })} /></Field>
+            <Field label="Untertitel" htmlFor="ps"><Input id="ps" placeholder="z. B. Beratung für Sichtbarkeit" value={p.subtitle} onChange={(e) => setP({ ...p, subtitle: e.target.value })} /></Field>
+            <Field label="Dein Link" htmlFor="ph" className="sm:col-span-2" hint="Achtung: Alte Links funktionieren nach einer Änderung nicht mehr.">
+              <div className="flex items-center rounded-[10px] border border-line bg-sunken text-[15px] shadow-xs focus-within:border-accent">
+                <span className="hidden pl-3 text-muted sm:inline">{location.host}/</span>
+                <input id="ph" required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={p.handle} onChange={(e) => setP({ ...p, handle: e.target.value.toLowerCase() })} className="h-10 min-w-0 flex-1 rounded-[10px] bg-surface px-3 outline-none sm:rounded-l-none" />
+              </div>
+            </Field>
+          </div>
+          <div className="mt-5"><ErrorBox error={saveProfile.error} /></div>
+          <Button type="submit" variant="primary" className="mt-2" disabled={saveProfile.isPending}>Speichern</Button>
+        </form>
+      </Card>
+      {me.role === 'owner' && s.data && (
+        <Card className="p-6">
+          <SectionHeader title="Marke" description="Akzentfarbe für Buttons, freie Tage und Mails. Wird sofort übernommen." />
+          <div className="mt-5 flex flex-wrap gap-3" role="radiogroup" aria-label="Akzentfarbe">
+            {hues.map((c) => {
+              const sel = s.data!.branding.accentHue === c.h
+              return (
+                <button key={c.h} role="radio" aria-checked={sel} aria-label={c.n} onClick={() => { setAccentHue(c.h); saveBrand.mutate({ accentHue: c.h }) }} className={cn('press flex size-11 items-center justify-center rounded-full ring-offset-2 ring-offset-surface', sel && 'ring-2 ring-fg')} style={{ background: `oklch(0.52 0.1 ${c.h})` }}>
+                  {sel && <Check className="size-5 text-white" />}
+                </button>
+              )
+            })}
+          </div>
+          <form className="mt-6 flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); saveBrand.mutate({ instanceName }, { onSuccess: () => toast('Gespeichert') }) }}>
+            <Field label="Name der Instanz" htmlFor="in" hint="Absender in Mails und Name für Passkeys." className="min-w-[240px] flex-1"><Input id="in" required value={instanceName} onChange={(e) => setInstanceName(e.target.value)} /></Field>
+            <Button type="submit">Speichern</Button>
+          </form>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+/* ---------------- E-Mail ---------------- */
+
+function EMail() {
+  const me = useAuth().data!.user!
+  const qc = useQueryClient()
+  const s = useSettings()
+  const [f, setF] = useState({ host: '', port: 587, security: 'starttls' as 'starttls' | 'tls' | 'none', user: '', password: '', fromName: me.name, fromEmail: '', replyTo: '' })
+  const smtpLoaded = useRef(false)
+  useEffect(() => {
+    // Nur einmal übernehmen, Hintergrund-Aktualisierungen (Mail-Zähler) überschreiben keine Eingaben
+    if (s.data?.smtp && !smtpLoaded.current) {
+      smtpLoaded.current = true
+      setF((x) => ({ ...x, ...s.data!.smtp!, password: '' }))
+    }
+  }, [s.data])
+  const save = useMutation({
+    mutationFn: () => api('/api/settings/smtp', { method: 'PUT', body: { ...f, port: Number(f.port), password: f.password || undefined } }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['settings'] }); setF((x) => ({ ...x, password: '' })); toast('Gespeichert') },
+  })
+  const test = useMutation({ mutationFn: () => api('/api/settings/smtp/test', { body: { to: me.email } }), onSuccess: () => toast(`Testmail an ${me.email} gesendet`) })
+  const retry = useMutation({ mutationFn: () => api('/api/settings/mail/retry', { body: {} }), onSuccess: () => { qc.invalidateQueries({ queryKey: ['settings'] }); toast('Mails werden erneut gesendet') } })
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value })
+  if (me.role !== 'owner') return <p className="text-sm text-muted">Nur die Inhaberin oder der Inhaber der Instanz kann den Versand einrichten.</p>
+  const mail = s.data?.mail
+
+  return (
+    <div className="flex flex-col gap-6">
+      {mail && (mail.failed > 0 || (mail.queued > 0 && mail.lastError)) && (
+        <div className="flex flex-wrap items-start gap-3 rounded-2xl border border-warn-line bg-warn-soft p-4 text-warn-fg">
+          <AlertTriangle className="mt-0.5 size-[18px] shrink-0" />
+          <div className="min-w-[220px] flex-1 text-sm">
+            <p className="font-semibold">{mail.failed + mail.queued} Mail(s) warten auf Versand.</p>
+            <p className="mt-0.5 opacity-90">Letzter Fehler: {mail.lastError}</p>
+          </div>
+          <Button size="sm" onClick={() => retry.mutate()}><RotateCw /> Jetzt erneut senden</Button>
+        </div>
+      )}
+      <Card className="p-6">
+        <SectionHeader title="Versand (SMTP)" description="termind verschickt alle Mails über dein eigenes Postfach. Deine Domain bleibt der Absender." action={s.data?.smtp ? <Badge tone="ok"><Check className="size-3.5" /> Eingerichtet</Badge> : <Badge tone="warn">Fehlt noch</Badge>} />
+        <form className="mt-5" onSubmit={(e) => { e.preventDefault(); save.mutate() }}>
+          <div className="grid gap-4 sm:grid-cols-[1fr_120px]">
+            <Field label="Server" htmlFor="sh"><Input id="sh" required placeholder="z. B. smtp.mailbox.org" value={f.host} onChange={set('host')} /></Field>
+            <Field label="Port" htmlFor="sp"><Input id="sp" required type="number" value={f.port} onChange={set('port')} className="tabular" /></Field>
+          </div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <Field label="Benutzer" htmlFor="su"><Input id="su" autoComplete="off" value={f.user} onChange={set('user')} /></Field>
+            <Field label="Verschlüsselung" htmlFor="ss">
+              <Select id="ss" value={f.security} onChange={set('security')}><option value="starttls">STARTTLS (Port 587)</option><option value="tls">SSL/TLS (Port 465)</option><option value="none">Keine</option></Select>
+            </Field>
+            <Field label="Passwort" htmlFor="spw" className="sm:col-span-2" hint={s.data?.smtp?.hasPassword ? 'Gespeichert. Leer lassen, um es zu behalten.' : 'Wird verschlüsselt gespeichert.'}>
+              <Input id="spw" type="password" autoComplete="new-password" value={f.password} onChange={set('password')} placeholder={s.data?.smtp?.hasPassword ? '••••••••••••' : ''} />
+            </Field>
+            <Field label="Absendername" htmlFor="sn"><Input id="sn" required value={f.fromName} onChange={set('fromName')} /></Field>
+            <Field label="Absender-Adresse" htmlFor="sf"><Input id="sf" required type="email" placeholder="termine@deine-domain.de" value={f.fromEmail} onChange={set('fromEmail')} /></Field>
+            <Field label="Antworten an (optional)" htmlFor="sr" className="sm:col-span-2"><Input id="sr" type="email" value={f.replyTo} onChange={set('replyTo')} /></Field>
+          </div>
+          <div className="mt-5 flex flex-col gap-3"><ErrorBox error={save.error ?? test.error} /></div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button type="submit" variant="primary" disabled={save.isPending}>Speichern</Button>
+            <Button type="button" disabled={!s.data?.smtp || test.isPending} onClick={() => test.mutate()}><Send /> Testmail an mich</Button>
+          </div>
+        </form>
+      </Card>
+      <MailTexte />
+    </div>
+  )
+}
+
+/* ---------------- KI & MCP ---------------- */
+
+interface Token { id: string; name: string; scope: 'read' | 'write'; prefix: string; lastUsedAt: string | null; createdAt: string }
+interface AuditRow { id: string; at: string; actorType: string; client: string | null; action: string; detail: string; kind: 'read' | 'write' | 'confirm' }
+
+function KI() {
+  const me = useAuth().data!.user!
+  const qc = useQueryClient()
+  const tokens = useQuery({ queryKey: ['tokens'], queryFn: () => api<Token[]>('/api/tokens') })
+  const log = useQuery({ queryKey: ['audit'], queryFn: () => api<AuditRow[]>('/api/audit'), enabled: me.role === 'owner' })
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
+  const [scope, setScope] = useState<'read' | 'write'>('write')
+  const [created, setCreated] = useState<string | null>(null)
+  const create = useMutation({
+    mutationFn: () => api<{ token: string }>('/api/tokens', { body: { name, scope } }),
+    onSuccess: (r) => { setCreated(r.token); qc.invalidateQueries({ queryKey: ['tokens'] }) },
+  })
+  const revoke = useMutation({ mutationFn: (id: string) => api(`/api/tokens/${id}`, { method: 'DELETE' }), onSuccess: () => { qc.invalidateQueries({ queryKey: ['tokens'] }); toast('Zugang entzogen') } })
+  const mcpUrl = `${location.origin}/mcp`
+  const aiLog = (log.data ?? []).filter((l) => l.actorType === 'token')
+
+  return (
+    <div className="flex flex-col gap-6">
+      <Card className="overflow-hidden">
+        <div className="p-6">
+          <SectionHeader title="Mit einer KI verbinden" description="Füge diese Adresse in deinem KI-Assistenten (Web, App oder ChatGPT) als eigenen Connector hinzu. Die Anmeldung bestätigst du einmal hier im Browser. Für Skripte und n8n nimmst du einen API-Schlüssel." />
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <code className="flex h-10 min-w-0 flex-1 items-center truncate rounded-[10px] border border-line bg-sunken px-3 font-mono text-[13px]">{mcpUrl}</code>
+            <CopyButton value={mcpUrl} label="Kopieren" size="md" />
+          </div>
+          <p className="mt-3 text-[13px] text-muted">Im Assistenten: Einstellungen → Connectors → Eigenen Connector hinzufügen → Adresse einfügen → Verbinden.</p>
+        </div>
+        <div className="grid gap-px border-t border-line bg-line sm:grid-cols-3">
+          {[
+            { t: 'Lesen', d: 'Termine, freie Zeiten, Terminseiten, Verfügbarkeit' },
+            { t: 'Verwalten', d: 'Terminseiten, Wochenzeiten, Ausnahmen, Notizen' },
+            { t: 'Mit Rückfrage', d: 'Buchen, Absagen, Verschieben, Löschen. Erst Vorschau, dann deine Zustimmung' },
+          ].map((x) => (
+            <div key={x.t} className="bg-surface p-4">
+              <p className="text-sm font-medium">{x.t}</p>
+              <p className="mt-1 text-[13px] text-muted">{x.d}</p>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Grants />
+
+      <Card>
+        <div className="flex items-center justify-between gap-4 border-b border-line px-6 py-4">
+          <SectionHeader title="API-Schlüssel" />
+          <Button size="sm" variant="primary" onClick={() => { setName(''); setCreated(null); setOpen(true) }}><Plus /> Neuer Schlüssel</Button>
+        </div>
+        {tokens.data?.length === 0 && <p className="px-6 py-6 text-sm text-muted">Noch kein Schlüssel. Ohne Schlüssel hat keine KI Zugriff.</p>}
+        <ul className="divide-y divide-line">
+          {tokens.data?.map((t) => (
+            <li key={t.id} className="flex flex-wrap items-center gap-3 px-6 py-3.5">
+              <span className="flex size-9 items-center justify-center rounded-lg bg-surface-2"><Bot className="size-4 text-muted" /></span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">{t.name}</p>
+                <p className="text-[13px] text-muted"><code className="font-mono">{t.prefix}…</code> · {t.lastUsedAt ? `zuletzt aktiv ${new Date(t.lastUsedAt).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}` : 'noch nie benutzt'}</p>
+              </div>
+              <Badge tone={t.scope === 'read' ? 'neutral' : 'accent'}>{t.scope === 'read' ? 'Nur lesen' : 'Verwalten'}</Badge>
+              <Button size="sm" variant="ghost" className="text-danger hover:bg-danger-soft hover:text-danger" onClick={() => revoke.mutate(t.id)}>Entziehen</Button>
+            </li>
+          ))}
+        </ul>
+      </Card>
+
+      {me.role === 'owner' && (
+        <Card>
+          <div className="border-b border-line px-6 py-4">
+            <SectionHeader title="KI-Protokoll" description="Alles, was ein Assistent in deinem Namen gelesen oder getan hat." />
+          </div>
+          {aiLog.length === 0 ? (
+            <p className="px-6 py-6 text-sm text-muted">Noch keine KI-Aktivität.</p>
+          ) : (
+            <ol className="px-6 py-2">
+              {aiLog.slice(0, 50).map((l) => (
+                <li key={l.id} className="relative flex gap-4 py-3 pl-6 before:absolute before:top-0 before:bottom-0 before:left-[5px] before:w-px before:bg-line first:before:top-5 last:before:bottom-auto last:before:h-5">
+                  <span className={cn('absolute top-[18px] left-0 size-[11px] rounded-full border-2 border-surface', l.kind === 'read' ? 'bg-line-strong' : l.kind === 'confirm' ? 'bg-warn-line' : 'bg-accent')} aria-hidden />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm"><span className="font-medium">{l.action}</span> <span className="text-muted">· {l.client}</span></p>
+                    {l.detail && <p className="mt-0.5 truncate text-[13px] text-muted">{l.detail}</p>}
+                  </div>
+                  <time className="shrink-0 text-[13px] text-subtle tabular">{new Date(l.at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</time>
+                </li>
+              ))}
+            </ol>
+          )}
+        </Card>
+      )}
+
+      <Dialog
+        open={open}
+        onOpenChange={setOpen}
+        title={created ? 'Dein neuer Schlüssel' : 'Neuer API-Schlüssel'}
+        description={created ? 'Kopiere ihn jetzt. Er wird nur dieses eine Mal angezeigt.' : undefined}
+        footer={created ? <Button variant="primary" onClick={() => setOpen(false)}>Fertig</Button> : <><Button variant="ghost" onClick={() => setOpen(false)}>Abbrechen</Button><Button variant="primary" disabled={!name || create.isPending} onClick={() => create.mutate()}>Erstellen</Button></>}
+      >
+        {created ? (
+          <div className="flex flex-col gap-3">
+            <code className="block rounded-xl border border-line bg-sunken p-3 font-mono text-[13px] break-all">{created}</code>
+            <CopyButton value={created} label="Schlüssel kopieren" size="md" variant="primary" />
+            <details className="text-sm text-muted">
+              <summary className="cursor-pointer font-medium text-fg">So trägst du ihn in einem Desktop-Client ein</summary>
+              <pre className="mt-2 overflow-x-auto rounded-xl bg-sunken p-3 font-mono text-[12px] leading-relaxed text-fg">{JSON.stringify({ mcpServers: { termind: { command: 'npx', args: ['-y', 'mcp-remote', mcpUrl, '--header', `Authorization: Bearer ${created}`] } } }, null, 2)}</pre>
+            </details>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <Field label="Name" htmlFor="tn" hint="Damit du später weißt, wofür er ist."><Input id="tn" autoFocus placeholder="z. B. Desktop-Client" value={name} onChange={(e) => setName(e.target.value)} /></Field>
+            <Field label="Rechte" htmlFor="tr">
+              <Select id="tr" value={scope} onChange={(e) => setScope(e.target.value as 'read' | 'write')}>
+                <option value="write">Verwalten (Gast-Mails und Löschen nur mit Rückfrage)</option>
+                <option value="read">Nur lesen</option>
+              </Select>
+            </Field>
+            <ErrorBox error={create.error} />
+          </div>
+        )}
+      </Dialog>
+    </div>
+  )
+}
+
+function Grants() {
+  const qc = useQueryClient()
+  const q = useQuery({ queryKey: ['grants'], queryFn: () => api<{ id: string; clientName: string; scope: 'read' | 'write'; lastUsedAt: string | null; createdAt: string }[]>('/api/oauth/grants') })
+  const revoke = useMutation({ mutationFn: (id: string) => api(`/api/oauth/grants/${id}`, { method: 'DELETE' }), onSuccess: () => { qc.invalidateQueries({ queryKey: ['grants'] }); toast('Zugang entzogen') } })
+  if (!q.data?.length) return null
+  return (
+    <Card>
+      <div className="border-b border-line px-6 py-4"><SectionHeader title="Verbundene Assistenten" description="Über OAuth angemeldet. Zugänge erneuern sich automatisch, bis du sie entziehst." /></div>
+      <ul className="divide-y divide-line">
+        {q.data.map((g) => (
+          <li key={g.id} className="flex flex-wrap items-center gap-3 px-6 py-3.5">
+            <span className="flex size-9 items-center justify-center rounded-lg bg-surface-2"><Bot className="size-4 text-muted" /></span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">{g.clientName}</p>
+              <p className="text-[13px] text-muted">{g.lastUsedAt ? `zuletzt aktiv ${new Date(g.lastUsedAt).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}` : `verbunden ${new Date(g.createdAt).toLocaleDateString('de-DE')}`}</p>
+            </div>
+            <Badge tone={g.scope === 'read' ? 'neutral' : 'accent'}>{g.scope === 'read' ? 'Nur lesen' : 'Verwalten'}</Badge>
+            <Button size="sm" variant="ghost" className="text-danger hover:bg-danger-soft hover:text-danger" onClick={() => revoke.mutate(g.id)}>Entziehen</Button>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  )
+}
+
+/* ---------------- Datenschutz ---------------- */
+
+function Datenschutz() {
+  const qc = useQueryClient()
+  const s = useSettings()
+  const [imprintUrl, setImprint] = useState('')
+  const [privacyUrl, setPrivacy] = useState('')
+  const linksLoaded = useRef(false)
+  useEffect(() => {
+    if (s.data && !linksLoaded.current) {
+      linksLoaded.current = true
+      setImprint(s.data.branding.imprintUrl)
+      setPrivacy(s.data.branding.privacyUrl)
+    }
+  }, [s.data])
+  const save = useMutation({
+    mutationFn: (b: object) => api('/api/settings/branding', { method: 'PUT', body: b }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['settings'] }); qc.invalidateQueries({ queryKey: ['instance'] }); toast('Gespeichert') },
+  })
+  if (!s.data) return <ErrorBox error={s.error} />
+  return (
+    <div className="flex flex-col gap-6">
+      <Card className="divide-y divide-line px-6 py-5">
+        <Row title="Einwilligung auf der Buchungsseite" hint="Häkchen mit Link zu deiner Datenschutzerklärung. Ohne Häkchen ist keine Buchung möglich.">
+          <Switch label="Einwilligung abfragen" checked={s.data.branding.consentRequired} onCheckedChange={(v) => save.mutate({ consentRequired: v })} />
+        </Row>
+        <Row title="Impressum & Datenschutz" hint="Erscheinen unten auf jeder Buchungsseite.">
+          <form className="flex w-72 max-w-full flex-col gap-2" onSubmit={(e) => { e.preventDefault(); save.mutate({ imprintUrl, privacyUrl }) }}>
+            <Input aria-label="Link zum Impressum" type="url" placeholder="https://…/impressum" value={imprintUrl} onChange={(e) => setImprint(e.target.value)} />
+            <Input aria-label="Link zur Datenschutzerklärung" type="url" placeholder="https://…/datenschutz" value={privacyUrl} onChange={(e) => setPrivacy(e.target.value)} />
+            <Button type="submit" size="sm" className="self-start">Speichern</Button>
+          </form>
+        </Row>
+      </Card>
+      <ErrorBox error={save.error} />
+      <PrivacyTools />
+      <p className="text-[13px] text-muted">termind setzt auf Buchungsseiten keine Cookies und lädt nichts von fremden Servern. Schriften und Code kommen von deinem eigenen Server.</p>
+    </div>
+  )
+}
+
+/* ---------------- Sicherheit ---------------- */
+
+interface Passkey { id: string; name: string; createdAt: string; lastUsedAt: string | null }
+
+function Sicherheit() {
+  const me = useAuth().data!.user!
+  const refresh = useRefreshAuth()
+  const qc = useQueryClient()
+  const keys = useQuery({ queryKey: ['passkeys'], queryFn: () => api<Passkey[]>('/api/passkeys') })
+  const addKey = useMutation({
+    mutationFn: async () => {
+      const { options, challengeId } = await api<{ options: Parameters<typeof startRegistration>[0]['optionsJSON']; challengeId: string }>('/api/passkeys/options', { body: {} })
+      const response = await startRegistration({ optionsJSON: options })
+      return api('/api/passkeys', { body: { challengeId, response } })
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['passkeys'] }); toast('Passkey hinzugefügt') },
+  })
+  const delKey = useMutation({ mutationFn: (id: string) => api(`/api/passkeys/${id}`, { method: 'DELETE' }), onSuccess: () => qc.invalidateQueries({ queryKey: ['passkeys'] }) })
+  const [pwOpen, setPwOpen] = useState(false)
+  const [totpOpen, setTotpOpen] = useState(false)
+  const [offOpen, setOffOpen] = useState(false)
+
+  return (
+    <div className="flex flex-col gap-6">
+      <Card>
+        <div className="flex items-center justify-between gap-4 border-b border-line px-6 py-4">
+          <SectionHeader title="Passkeys" description="Anmelden mit Face ID, Touch ID oder Windows Hello. Ohne Passwort." />
+          <Button size="sm" variant="primary" disabled={addKey.isPending} onClick={() => addKey.mutate()}><Fingerprint /> Hinzufügen</Button>
+        </div>
+        {addKey.isError && !/NotAllowed|abort/i.test(String(addKey.error)) && <div className="px-6 pt-4"><ErrorBox error={addKey.error} /></div>}
+        {keys.data?.length === 0 && <p className="px-6 py-6 text-sm text-muted">Noch kein Passkey. Damit meldest du dich schneller und sicherer an.</p>}
+        <ul className="divide-y divide-line">
+          {keys.data?.map((p) => (
+            <li key={p.id} className="flex items-center gap-3 px-6 py-3.5">
+              <Fingerprint className="size-4 text-subtle" aria-hidden />
+              <div className="flex-1">
+                <p className="text-sm font-medium">{p.name}</p>
+                <p className="text-[13px] text-muted">{p.lastUsedAt ? `zuletzt benutzt ${new Date(p.lastUsedAt).toLocaleDateString('de-DE')}` : `angelegt ${new Date(p.createdAt).toLocaleDateString('de-DE')}`}</p>
+              </div>
+              <Button size="sm" variant="ghost" onClick={() => delKey.mutate(p.id)}>Entfernen</Button>
+            </li>
+          ))}
+        </ul>
+      </Card>
+      <Card className="divide-y divide-line px-6 py-5">
+        <Row title="Passwort" hint="Beim Ändern werden alle anderen Sitzungen beendet."><Button size="sm" onClick={() => setPwOpen(true)}>Ändern</Button></Row>
+        <Row title="Andere Geräte abmelden" hint="Beendet alle Sitzungen außer dieser, z. B. nach Verlust eines Geräts.">
+          <Button size="sm" onClick={() => api('/api/security/logout-others', { body: {} }).then(() => toast('Andere Sitzungen beendet'))}>Abmelden</Button>
+        </Row>
+        <Row title="Zwei-Faktor-Anmeldung" hint="Code aus einer Authenticator-App zusätzlich zum Passwort.">
+          {me.totpEnabled ? (
+            <div className="flex items-center gap-2"><Badge tone="ok"><Check className="size-3.5" /> Aktiv</Badge><Button size="sm" variant="ghost" onClick={() => setOffOpen(true)}>Ausschalten</Button></div>
+          ) : (
+            <Button size="sm" onClick={() => setTotpOpen(true)}>Einrichten</Button>
+          )}
+        </Row>
+      </Card>
+      <PasswordDialog open={pwOpen} onOpenChange={setPwOpen} />
+      <TotpDialog open={totpOpen} onOpenChange={setTotpOpen} onDone={refresh} />
+      <TotpOffDialog open={offOpen} onOpenChange={setOffOpen} onDone={refresh} />
+    </div>
+  )
+}
+
+function PasswordDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const [current, setCurrent] = useState('')
+  const [next, setNext] = useState('')
+  const m = useMutation({ mutationFn: () => api('/api/security/password', { body: { current, next } }), onSuccess: () => { onOpenChange(false); setCurrent(''); setNext(''); toast('Passwort geändert') } })
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange} title="Passwort ändern" footer={<><Button variant="ghost" onClick={() => onOpenChange(false)}>Abbrechen</Button><Button variant="primary" disabled={m.isPending || next.length < 10 || !current} onClick={() => m.mutate()}>Ändern</Button></>}>
+      <div className="flex flex-col gap-4">
+        <Field label="Aktuelles Passwort" htmlFor="cur"><Input id="cur" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} /></Field>
+        <Field label="Neues Passwort" htmlFor="nx" hint="Mindestens 10 Zeichen."><Input id="nx" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} /></Field>
+        <ErrorBox error={m.error} />
+      </div>
+    </Dialog>
+  )
+}
+
+function TotpDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenChange: (o: boolean) => void; onDone: () => void }) {
+  const [code, setCode] = useState('')
+  const start = useMutation({ mutationFn: () => api<{ qr: string; secret: string }>('/api/security/totp/start', { body: {} }) })
+  const confirm = useMutation({ mutationFn: () => api('/api/security/totp/confirm', { body: { code } }), onSuccess: () => { onOpenChange(false); onDone(); toast('Zwei-Faktor-Anmeldung ist aktiv') } })
+  useEffect(() => {
+    if (open) { setCode(''); start.mutate() }
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange} title="Zwei-Faktor-Anmeldung einrichten" description="Scanne den Code mit einer Authenticator-App (z. B. 1Password, Aegis, Google Authenticator) und gib den angezeigten Code ein." footer={<><Button variant="ghost" onClick={() => onOpenChange(false)}>Abbrechen</Button><Button variant="primary" disabled={code.length < 6 || confirm.isPending} onClick={() => confirm.mutate()}>Aktivieren</Button></>}>
+      <div className="flex flex-col items-center gap-4">
+        {start.data ? <img src={start.data.qr} alt="QR-Code für die Authenticator-App" className="size-[200px] rounded-xl bg-white p-2" /> : <div className="size-[200px] animate-pulse rounded-xl bg-surface-2" />}
+        {start.data && <p className="text-center text-[13px] text-muted">Oder manuell: <code className="font-mono break-all text-fg">{start.data.secret}</code></p>}
+        <Input aria-label="Code aus der App" inputMode="numeric" autoComplete="one-time-code" placeholder="123456" value={code} onChange={(e) => setCode(e.target.value)} className="h-12 w-48 text-center text-xl tracking-[0.3em] tabular" />
+        <ErrorBox error={confirm.error ?? start.error} />
+      </div>
+    </Dialog>
+  )
+}
+
+function TotpOffDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenChange: (o: boolean) => void; onDone: () => void }) {
+  const [password, setPassword] = useState('')
+  const m = useMutation({ mutationFn: () => api('/api/security/totp/disable', { body: { password } }), onSuccess: () => { onOpenChange(false); onDone(); toast('Zwei-Faktor-Anmeldung ausgeschaltet') } })
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange} title="Zwei-Faktor-Anmeldung ausschalten?" footer={<><Button variant="ghost" onClick={() => onOpenChange(false)}>Abbrechen</Button><Button variant="danger" disabled={m.isPending || !password} onClick={() => m.mutate()}>Ausschalten</Button></>}>
+      <Field label="Zur Bestätigung dein Passwort" htmlFor="opw"><Input id="opw" type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
+      <div className="mt-3"><ErrorBox error={m.error} /></div>
+    </Dialog>
+  )
+}

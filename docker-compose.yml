@@ -1,0 +1,16 @@
+# Minimaler Betrieb einer termind-Instanz.
+# Vor dem Start PUBLIC_URL auf die echte Adresse setzen (mit https://).
+services:
+  termind:
+    build: .
+    image: termind:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
+    volumes:
+      - termind-data:/data
+
+volumes:
+  termind-data:

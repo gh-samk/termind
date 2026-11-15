@@ -1,0 +1,46 @@
+# Eine termind-Instanz mit automatischem HTTPS (Caddy).
+#
+#   1. DNS: termine.example.de → IP des Servers
+#   2. DOMAIN und ACME_EMAIL in .env eintragen (siehe .env.example)
+#   3. docker compose up -d
+#
+services:
+  termind:
+    image: ghcr.io/gh-samk/termind:latest
+    restart: unless-stopped
+    environment:
+      PUBLIC_URL: https://${DOMAIN:?DOMAIN fehlt}
+      TRUST_PROXY: "true"
+    volumes:
+      - termind-data:/data
+    mem_limit: 256m
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "3" }
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL fehlt}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [termind]
+
+volumes:
+  termind-data:
+  caddy-data:
+  caddy-config:

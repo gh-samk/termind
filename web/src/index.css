@@ -1,0 +1,257 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/roboto';
+@import '@fontsource-variable/roboto/wght-italic.css';
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/* ------------------------------------------------------------------
+   termind design tokens
+   Ruhig, warm-neutral, ein Akzent. Alle Farben als Tokens, nie roh in
+   Komponenten. Der Akzent ist pro Instanz überschreibbar (--accent-h).
+------------------------------------------------------------------- */
+:root {
+  --accent-h: 172;
+
+  --bg: oklch(0.975 0.006 85);
+  --surface: oklch(0.995 0.003 85);
+  --surface-2: oklch(0.958 0.008 85);
+  --surface-sunken: oklch(0.945 0.009 85);
+  --border: oklch(0.905 0.009 85);
+  --border-strong: oklch(0.85 0.011 80);
+  --fg: oklch(0.225 0.012 60);
+  --fg-muted: oklch(0.46 0.013 65);
+  --fg-subtle: oklch(0.56 0.012 65);
+
+  --accent: oklch(0.47 0.085 var(--accent-h));
+  --accent-hover: oklch(0.42 0.085 var(--accent-h));
+  --accent-fg: oklch(0.99 0.005 var(--accent-h));
+  --accent-soft: oklch(0.948 0.028 var(--accent-h));
+  --accent-soft-fg: oklch(0.37 0.075 var(--accent-h));
+  --ring: oklch(0.6 0.09 var(--accent-h));
+
+  --danger: oklch(0.53 0.17 28);
+  --danger-soft: oklch(0.955 0.025 28);
+  --danger-soft-fg: oklch(0.45 0.15 28);
+  --warn-soft: oklch(0.965 0.04 85);
+  --warn-border: oklch(0.86 0.09 85);
+  --warn-fg: oklch(0.43 0.09 65);
+  --ok: oklch(0.55 0.12 150);
+
+  --shadow-sm: 0 1px 2px oklch(0.3 0.02 60 / 0.06);
+  --shadow-md: 0 1px 2px oklch(0.3 0.02 60 / 0.05), 0 4px 16px -4px oklch(0.3 0.02 60 / 0.1);
+  --shadow-lg: 0 2px 4px oklch(0.3 0.02 60 / 0.04), 0 16px 48px -12px oklch(0.3 0.02 60 / 0.22);
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: oklch(0.165 0.006 70);
+  --surface: oklch(0.2 0.007 70);
+  --surface-2: oklch(0.235 0.008 70);
+  --surface-sunken: oklch(0.18 0.006 70);
+  --border: oklch(0.285 0.008 70);
+  --border-strong: oklch(0.35 0.01 70);
+  --fg: oklch(0.945 0.006 85);
+  --fg-muted: oklch(0.73 0.01 80);
+  --fg-subtle: oklch(0.63 0.01 80);
+
+  --accent: oklch(0.74 0.105 var(--accent-h));
+  --accent-hover: oklch(0.79 0.1 var(--accent-h));
+  --accent-fg: oklch(0.2 0.03 var(--accent-h));
+  --accent-soft: oklch(0.29 0.04 var(--accent-h));
+  --accent-soft-fg: oklch(0.86 0.075 var(--accent-h));
+  --ring: oklch(0.7 0.1 var(--accent-h));
+
+  --danger: oklch(0.68 0.16 28);
+  --danger-soft: oklch(0.28 0.06 28);
+  --danger-soft-fg: oklch(0.84 0.09 28);
+  --warn-soft: oklch(0.26 0.04 80);
+  --warn-border: oklch(0.42 0.07 80);
+  --warn-fg: oklch(0.86 0.09 85);
+  --ok: oklch(0.72 0.13 150);
+
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.3);
+  --shadow-md: 0 1px 2px oklch(0 0 0 / 0.3), 0 4px 16px -4px oklch(0 0 0 / 0.4);
+  --shadow-lg: 0 2px 4px oklch(0 0 0 / 0.3), 0 16px 48px -12px oklch(0 0 0 / 0.6);
+}
+
+@theme inline {
+  --font-sans: 'Roboto Variable', Roboto, ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Roboto Variable', Roboto, ui-sans-serif, system-ui, sans-serif;
+
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-sunken: var(--surface-sunken);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--fg-muted);
+  --color-subtle: var(--fg-subtle);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-soft-fg: var(--accent-soft-fg);
+  --color-ring: var(--ring);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-soft-fg: var(--danger-soft-fg);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-line: var(--warn-border);
+  --color-warn-fg: var(--warn-fg);
+  --color-ok: var(--ok);
+
+  --shadow-xs: var(--shadow-sm);
+  --shadow-card: var(--shadow-md);
+  --shadow-pop: var(--shadow-lg);
+
+  --ease-out-strong: var(--ease-out);
+  --ease-drawer: var(--ease-drawer);
+}
+
+@layer base {
+  /* Eingebettet: transparenter Rand, Höhe folgt dem Inhalt */
+  html.embed,
+  html.embed body {
+    background: transparent;
+    min-height: 0;
+    overflow: hidden; /* Höhe übernimmt der iframe, keine zweite Scrollleiste */
+  }
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--accent-soft-fg);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  button,
+  [role='button'],
+  a {
+    cursor: pointer;
+  }
+  /* Überschriften: Roboto fett, leicht enger gesetzt (wie kontext.email) */
+  .font-display {
+    font-weight: 700;
+    letter-spacing: -0.015em;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* ---------- Motion ---------- */
+/* Druck-Feedback für alles Klickbare (Emil: scale 0.97, 160ms ease-out) */
+.press {
+  transition:
+    transform 160ms var(--ease-out),
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    box-shadow 150ms ease;
+}
+.press:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Sanftes Einblenden neuer Ansichten */
+.enter {
+  animation: enter 260ms var(--ease-out) both;
+}
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.enter-stagger > * {
+  animation: enter 280ms var(--ease-out) both;
+}
+.enter-stagger > *:nth-child(2) { animation-delay: 30ms; }
+.enter-stagger > *:nth-child(3) { animation-delay: 60ms; }
+.enter-stagger > *:nth-child(4) { animation-delay: 90ms; }
+.enter-stagger > *:nth-child(5) { animation-delay: 120ms; }
+.enter-stagger > *:nth-child(6) { animation-delay: 150ms; }
+.enter-stagger > *:nth-child(n + 7) { animation-delay: 170ms; }
+
+/* Radix: Popover/Dropdown skalieren vom Auslöser aus */
+.pop {
+  transform-origin: var(--radix-popper-transform-origin);
+}
+.pop[data-state='open'] {
+  animation: pop-in 160ms var(--ease-out);
+}
+.pop[data-state='closed'] {
+  animation: pop-out 110ms ease-out;
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(0.96); }
+}
+@keyframes pop-out {
+  to { opacity: 0; transform: scale(0.97); }
+}
+
+/* Dialoge: zentriert, Overlay blendet */
+.overlay[data-state='open'] { animation: fade-in 200ms ease-out; }
+.overlay[data-state='closed'] { animation: fade-out 140ms ease-out; }
+.modal[data-state='open'] { animation: modal-in 220ms var(--ease-out); }
+.modal[data-state='closed'] { animation: modal-out 140ms ease-out; }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes modal-in { from { opacity: 0; transform: translate(-50%, -48%) scale(0.97); } }
+@keyframes modal-out { to { opacity: 0; transform: translate(-50%, -49%) scale(0.98); } }
+
+/* Seitenleiste (Sheet) von rechts */
+.sheet[data-state='open'] { animation: sheet-in 320ms var(--ease-drawer); }
+.sheet[data-state='closed'] { animation: sheet-out 200ms var(--ease-out); }
+@keyframes sheet-in { from { transform: translateX(100%); } }
+@keyframes sheet-out { to { transform: translateX(100%); } }
+
+/* Bestätigungs-Haken: seltenes Ereignis, darf etwas Freude machen */
+.check-pop {
+  animation: check-pop 420ms var(--ease-out) both;
+}
+@keyframes check-pop {
+  0% { opacity: 0; transform: scale(0.8); }
+  60% { opacity: 1; transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .check-pop { animation: fade-in 150ms ease-out both; }
+  .press:active:not(:disabled) { transform: none; }
+  .enter, .enter-stagger > * { animation: fade-in 150ms ease-out both; }
+  .pop[data-state='open'], .modal[data-state='open'] { animation: fade-in 150ms ease-out; }
+  .sheet[data-state='open'] { animation: fade-in 150ms ease-out; }
+}
+
+/* Hover nur auf Geräten mit echtem Zeiger */
+@media (hover: hover) and (pointer: fine) {
+  .hover-lift:hover {
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-md);
+  }
+}
