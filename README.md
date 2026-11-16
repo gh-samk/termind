@@ -90,7 +90,7 @@ docker compose pull && docker compose up -d
 
 Datenbank-Änderungen laufen beim Start automatisch. Was sich pro Version ändert, steht im [CHANGELOG](CHANGELOG.md).
 
-**Neu in 0.2.0:** Einrichtungs-Assistent mit Checkliste, Passwort-vergessen und Ersatzcodes, Termine verschieben und eintragen, Direkt-Knöpfe in Anfrage-Mails, überarbeitete Gastseiten und Mails, klarere Bedienung. **Betreiber mit lokalem Mail-Relay:** Mailserver in privaten Netzen (auch `127.0.0.1`) brauchen ab jetzt `ALLOW_PRIVATE_HOSTS=true`. Ausgesperrt? `docker compose exec termind node server/index.js reset-password du@example.de [--disable-2fa]` gibt einen Link zum Festlegen eines neuen Passworts aus.
+**Neu in 1.0.0:** Einrichtungs-Assistent mit Checkliste, Passwort-vergessen und Ersatzcodes, Termine verschieben und eintragen, Direkt-Knöpfe in Anfrage-Mails, überarbeitete Gastseiten und Mails, klarere Bedienung. **Betreiber mit lokalem Mail-Relay:** Mailserver in privaten Netzen (auch `127.0.0.1`) brauchen ab jetzt `ALLOW_PRIVATE_HOSTS=true`. Ausgesperrt? `docker compose exec termind node server/index.js reset-password du@example.de [--disable-2fa]` gibt einen Link zum Festlegen eines neuen Passworts aus.
 
 ### Backups
 

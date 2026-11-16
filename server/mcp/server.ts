@@ -129,7 +129,7 @@ async function execute(actor: TokenActor, action: PendingKind, p: Record<string,
 
 export function buildMcpServer(actor: TokenActor) {
   const server = new McpServer(
-    { name: 'termind', version: '0.1.0' },
+    { name: 'termind', version: '1.0.0' },
     {
       instructions:
         'termind ist ein Terminbuchungs-Tool. Zeiten werden als ISO-8601 mit Zeitzone übergeben. ' +

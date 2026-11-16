@@ -227,7 +227,7 @@ Manuelles Backup:
 docker compose exec termind node server/index.js backup
 ```
 
-**Update auf eine neue Version (z. B. 0.2.0):**
+**Update auf eine neue Version (z. B. 1.0.0):**
 
 1. Sichere vorher: `docker compose exec termind node server/index.js backup` und kopiere den Ordner `/data` an einen anderen Ort.
 2. Dann:
@@ -236,9 +236,9 @@ docker compose exec termind node server/index.js backup
 docker compose pull && docker compose up -d
 ```
 
-Datenbank-Änderungen laufen beim Start automatisch (Version 0.2.0 bringt zwei davon mit). Eine Rückkehr zu einer älteren Version ist danach nur mit dem Backup möglich. Prüfe nach dem Start, ob die Anmeldeseite lädt und der Mail-Versand noch funktioniert (*Einstellungen → E-Mail → Testmail an mich*).
+Datenbank-Änderungen laufen beim Start automatisch (Version 1.0.0 bringt zwei davon mit). Eine Rückkehr zu einer älteren Version ist danach nur mit dem Backup möglich. Prüfe nach dem Start, ob die Anmeldeseite lädt und der Mail-Versand noch funktioniert (*Einstellungen → E-Mail → Testmail an mich*).
 
-**Nur für Betreiber mit lokalem Mail-Server:** Ab 0.2.0 verbindet sich termind nicht mehr mit Mail-Servern in privaten Netzen (auch nicht `127.0.0.1`), solange `ALLOW_PRIVATE_HOSTS=true` fehlt. Setze es vor dem Update in der `.env` und in der `docker-compose.yml` unter `environment` (siehe `.env.example`).
+**Nur für Betreiber mit lokalem Mail-Server:** Ab 1.0.0 verbindet sich termind nicht mehr mit Mail-Servern in privaten Netzen (auch nicht `127.0.0.1`), solange `ALLOW_PRIVATE_HOSTS=true` fehlt. Setze es vor dem Update in der `.env` und in der `docker-compose.yml` unter `environment` (siehe `.env.example`).
 
 ## 14. Viele Instanzen betreiben
 
